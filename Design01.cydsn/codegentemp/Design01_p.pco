@@ -1,0 +1,58 @@
+dont_use_io iocell 1 0
+dont_use_io iocell 1 1
+dont_use_io iocell 1 3
+set_location "\Counter_2:CounterUDB:status_2\" macrocell 2 3 0 3
+set_location "\Counter_1:CounterUDB:sC32:counterdp:u3\" datapathcell 2 1 2 
+set_location "\Counter_2:CounterUDB:count_stored_i\" macrocell 2 3 0 1
+set_location "\Counter_1:CounterUDB:sC32:counterdp:u2\" datapathcell 3 1 2 
+set_location "\Counter_2:CounterUDB:prevCompare\" macrocell 2 2 0 1
+set_location "\Counter_1:CounterUDB:sSTSReg:stsreg\" statusicell 2 1 4 
+set_location "\Counter_2:CounterUDB:overflow_reg_i\" macrocell 2 3 0 2
+set_location "Net_1" macrocell 2 3 1 2
+set_location "Net_17" macrocell 2 3 1 1
+set_location "\Counter_2:CounterUDB:sC32:counterdp:u3\" datapathcell 2 2 2 
+set_location "\Counter_1:CounterUDB:status_0\" macrocell 2 1 0 0
+set_location "\Counter_1:CounterUDB:sC32:counterdp:u0\" datapathcell 2 0 2 
+set_location "\Counter_2:CounterUDB:sSTSReg:stsreg\" statusicell 2 2 4 
+set_location "\Counter_1:CounterUDB:prevCompare\" macrocell 2 1 0 1
+set_location "Net_50" macrocell 3 0 1 1
+set_location "\Counter_1:CounterUDB:status_2\" macrocell 2 0 0 3
+set_location "\Counter_2:CounterUDB:count_enable\" macrocell 2 3 0 0
+set_location "\Counter_2:CounterUDB:sC32:counterdp:u1\" datapathcell 3 3 2 
+set_location "__ONE__" macrocell 2 2 1 1
+set_location "\Counter_2:CounterUDB:sC32:counterdp:u2\" datapathcell 3 2 2 
+set_location "\Counter_1:CounterUDB:count_stored_i\" macrocell 2 0 0 1
+set_location "\Counter_1:CounterUDB:count_enable\" macrocell 2 0 0 0
+set_location "\Counter_1:CounterUDB:overflow_reg_i\" macrocell 2 0 0 2
+set_location "\Counter_2:CounterUDB:status_0\" macrocell 2 2 0 0
+set_location "\Counter_2:CounterUDB:sC32:counterdp:u0\" datapathcell 2 3 2 
+set_location "\Counter_1:CounterUDB:sC32:counterdp:u1\" datapathcell 3 0 2 
+set_io "\LCD:LCDPort(6)\" iocell 2 6
+set_io "\LCD:LCDPort(5)\" iocell 2 5
+set_io "\LCD:LCDPort(3)\" iocell 2 3
+set_io "\LCD:LCDPort(4)\" iocell 2 4
+# Note: port 12 is the logical name for port 7
+set_io "Ultrasonic1_Input_P_12_5(0)" iocell 12 4
+set_location "ClockBlock" clockblockcell -1 -1 0
+set_location "\Counter_2:CounterUDB:sCTRLReg:ctrlreg\" controlcell 2 3 6 
+set_location "isr_3" interrupt -1 -1 2
+set_location "isr_5" interrupt -1 -1 4
+set_location "isr_4" interrupt -1 -1 3
+set_location "\Counter_1:CounterUDB:sCTRLReg:ctrlreg\" controlcell 2 0 6 
+set_io "\LCD:LCDPort(0)\" iocell 2 0
+set_io "Pin_A1(0)" iocell 3 6
+set_io "Pin_B1(0)" iocell 3 5
+set_io "Pin_A2(0)" iocell 3 1
+set_io "Pin_B2(0)" iocell 3 2
+set_io "Pin_A1_1(0)" iocell 0 5
+set_io "Pin_B1_1(0)" iocell 0 6
+set_io "Pin_2_1(0)" iocell 4 5
+set_io "Pin_A2_1(0)" iocell 0 2
+set_io "Pin_B2_1(0)" iocell 0 1
+set_location "isr_2" interrupt -1 -1 1
+set_location "isr_1" interrupt -1 -1 0
+# Note: port 12 is the logical name for port 7
+set_io "Ultrasonic2_Input_P_12_4(0)" iocell 12 5
+set_io "Hall_Sensor_Out_P3_0(0)" iocell 3 0
+set_io "\LCD:LCDPort(2)\" iocell 2 2
+set_io "\LCD:LCDPort(1)\" iocell 2 1

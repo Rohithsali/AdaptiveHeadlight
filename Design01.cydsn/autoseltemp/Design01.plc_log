@@ -1,0 +1,27 @@
+E2066: Error while reading D:\Program Files (x86)\Cypress\PSoC Creator\4.0\PSoC Creator\dev/psoc3/dsiconn.cydata file : FFB in DSI but not RRG: ARM -1 -1 0
+E2710: Unable to find <7> contiguous pins for <\LCD:LCDPort(0)\>.
+E2709: Unable to complete IO placement for the design. See the report file for details.
+I2722: The following instances could not be placed:
+\LCD:LCDPort(0)\
+   \LCD:LCDPort(1)\
+   \LCD:LCDPort(2)\
+   \LCD:LCDPort(3)\
+   \LCD:LCDPort(4)\
+   \LCD:LCDPort(5)\
+   \LCD:LCDPort(6)\
+
+IO placement:
+   P0[0]: Pin_A2(0)
+   P0[1]: Ultrasonic1_Input_P_12_5(0)
+   P0[2]: Ultrasonic2_Input_P_12_4(0)
+   P0[3]: Hall_Sensor_Out_P3_0(0)
+   P0[4]: Pin_A1_1(0)
+   P0[5]: Pin_B1_1(0)
+   P0[6]: Pin_B2_1(0)
+   P0[7]: Ultrasonic1_Trigger_P_12_7(0)
+   P1[2]: Pin_B1(0)
+   P1[6]: Pin_A1(0)
+   P2[7]: Pin_A2_1(0)
+   P7[2]: Pin_B2(0)
+   P7[3]: Ultrasonic2_Trigger_P_12_6(0)
+E2055: An error occurred during placement of the design.

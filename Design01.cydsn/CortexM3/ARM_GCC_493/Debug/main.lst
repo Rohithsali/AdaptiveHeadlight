@@ -1,0 +1,5184 @@
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 1
+
+
+   1              		.syntax unified
+   2              		.cpu cortex-m3
+   3              		.fpu softvfp
+   4              		.eabi_attribute 20, 1
+   5              		.eabi_attribute 21, 1
+   6              		.eabi_attribute 23, 3
+   7              		.eabi_attribute 24, 1
+   8              		.eabi_attribute 25, 1
+   9              		.eabi_attribute 26, 1
+  10              		.eabi_attribute 30, 1
+  11              		.eabi_attribute 34, 1
+  12              		.eabi_attribute 18, 4
+  13              		.thumb
+  14              		.file	"main.c"
+  15              		.text
+  16              	.Ltext0:
+  17              		.cfi_sections	.debug_frame
+  18              		.section	.text.HALL_SENSOR,"ax",%progbits
+  19              		.align	2
+  20              		.global	HALL_SENSOR
+  21              		.thumb
+  22              		.thumb_func
+  23              		.type	HALL_SENSOR, %function
+  24              	HALL_SENSOR:
+  25              	.LFB77:
+  26              		.file 1 "main.c"
+   1:main.c        **** 
+   2:main.c        **** /* ========================================
+   3:main.c        ****     HRLV- EZ4 Ultrasonic sensors and stepper motor interfacing
+   4:main.c        ****     26 Jul 2017
+   5:main.c        ****     Tarun and Rohith
+   6:main.c        ****     
+   7:main.c        ****     Adaptive Headlight:  This code controls two stepper motors which aim a 
+   8:main.c        ****     bicycle or motorcycle headlight in ther desired direction regardless of
+   9:main.c        ****     the tilt of the vehicle, which is detected by an ultrasonic sensor.
+  10:main.c        ****     
+  11:main.c        ****     In this version, speed is not taken intpo account but should be in later 
+  12:main.c        ****     versions.
+  13:main.c        ****     
+  14:main.c        ****     Summer Project
+  15:main.c        ****  * ========================================
+  16:main.c        **** */
+  17:main.c        **** #include "project.h"
+  18:main.c        **** #include <stdio.h>
+  19:main.c        **** #include <stdlib.h>
+  20:main.c        **** 
+  21:main.c        **** // Diagnostic (test) variablrs.
+  22:main.c        **** uint32 bad_dx_count ;
+  23:main.c        **** float percent_good_counts ;
+  24:main.c        **** uint32 bad_event_array[10] ;  // Keep track whenever something goes wrong.
+  25:main.c        **** uint32 code_trace_array[10] ; // Keep track of interesting but normal code events.
+  26:main.c        **** 
+  27:main.c        **** 
+  28:main.c        **** // Table of how to point the beam.  Values determined by experiment.
+  29:main.c        **** //uint32 elevation_table[30]= [2,2,3,,4,6,7...], yaw_table[30], elevation_index, yaw_index; K1 =???
+  30:main.c        **** //uint32 elevation_step_count ;
+  31:main.c        **** 
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 2
+
+
+  32:main.c        **** int32 yaw_table[11] = {-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10}, yaw_index = 0;
+  33:main.c        **** 
+  34:main.c        **** int32 pitch_table[11] = {5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5}, pitch_index = 0;
+  35:main.c        **** 
+  36:main.c        **** /* Yaw index will point to home position at the beginning, which is 5 */
+  37:main.c        **** int32 prev_yaw_index = 5, prev_pitch_index = 5;
+  38:main.c        **** 
+  39:main.c        **** /* Steps to move */
+  40:main.c        **** int32 move_steps = 0, pitch_move_steps = 0, pitch_no_of_steps = 0;
+  41:main.c        **** 
+  42:main.c        **** /* Count variables to keep track of the pulse width of the sensor response */
+  43:main.c        **** int count = 0, count2, sensor_delay_count = 0;
+  44:main.c        **** 
+  45:main.c        **** /* Variables to store distances measured by the two sensors */
+  46:main.c        **** float distance = 0.0, distance2;
+  47:main.c        **** 
+  48:main.c        **** /* Delay between the steps of the stepper motor, 
+  49:main.c        ****     delay is sufficient to generate enough track for our application */
+  50:main.c        **** uint16 delay = 20000;
+  51:main.c        **** 
+  52:main.c        **** /* Keep track of the sum and differences between the distances tracked by the two sensors */
+  53:main.c        **** int sum, difference;
+  54:main.c        **** int hall_count = 0;
+  55:main.c        **** 
+  56:main.c        **** /* Flags to keep track of motor movement */
+  57:main.c        **** uint16 ccw_flag = 0, cw_flag = 0;
+  58:main.c        **** 
+  59:main.c        **** /* Variable to keep track of no of steps that the stepper motor should rotate */
+  60:main.c        **** int16 no_of_steps = 10;
+  61:main.c        **** 
+  62:main.c        **** /* Loop variable */
+  63:main.c        **** int i;
+  64:main.c        **** 
+  65:main.c        **** /* Variables to store previous valid value of distances */
+  66:main.c        **** float prev_distance = 0.0, prev_distance2;
+  67:main.c        **** 
+  68:main.c        **** /* A flag to indicate when the magnet is detected by the Hall Sensor */
+  69:main.c        **** uint8 hall_sensor_flag = 0;
+  70:main.c        **** uint8 pitch_limit = 10;
+  71:main.c        **** 
+  72:main.c        **** char lcd_string[9];
+  73:main.c        **** 
+  74:main.c        **** /* Yaw motor movement */
+  75:main.c        **** void step1() 
+  76:main.c        **** {
+  77:main.c        ****     Pin_A1_Write(0);
+  78:main.c        ****     Pin_A2_Write(1);
+  79:main.c        ****     Pin_B1_Write(1);
+  80:main.c        ****     Pin_B2_Write(0);
+  81:main.c        **** }
+  82:main.c        **** 
+  83:main.c        **** void step2() 
+  84:main.c        **** {
+  85:main.c        ****     Pin_A1_Write(0);
+  86:main.c        ****     Pin_A2_Write(1);
+  87:main.c        ****     Pin_B1_Write(0);
+  88:main.c        ****     Pin_B2_Write(1);
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 3
+
+
+  89:main.c        **** }
+  90:main.c        **** 
+  91:main.c        **** void step3() 
+  92:main.c        **** {
+  93:main.c        ****     Pin_A1_Write(1);
+  94:main.c        ****     Pin_A2_Write(0);
+  95:main.c        ****     Pin_B1_Write(0);
+  96:main.c        ****     Pin_B2_Write(1);
+  97:main.c        **** }
+  98:main.c        **** void step4() 
+  99:main.c        **** {
+ 100:main.c        ****     Pin_A1_Write(1);
+ 101:main.c        ****     Pin_A2_Write(0);
+ 102:main.c        ****     Pin_B1_Write(1);
+ 103:main.c        ****     Pin_B2_Write(0);
+ 104:main.c        **** }
+ 105:main.c        **** 
+ 106:main.c        **** /* Pitch motor movement */
+ 107:main.c        **** void step1_1() 
+ 108:main.c        **** {
+ 109:main.c        ****     Pin_A1_1_Write(0);
+ 110:main.c        ****     Pin_A2_1_Write(1);
+ 111:main.c        ****     Pin_B1_1_Write(1);
+ 112:main.c        ****     Pin_B2_1_Write(0);
+ 113:main.c        **** }
+ 114:main.c        **** 
+ 115:main.c        **** void step2_1() 
+ 116:main.c        **** {
+ 117:main.c        ****     Pin_A1_1_Write(0);
+ 118:main.c        ****     Pin_A2_1_Write(1);
+ 119:main.c        ****     Pin_B1_1_Write(0);
+ 120:main.c        ****     Pin_B2_1_Write(1);
+ 121:main.c        **** }
+ 122:main.c        **** 
+ 123:main.c        **** void step3_1() 
+ 124:main.c        **** {
+ 125:main.c        ****     Pin_A1_1_Write(1);
+ 126:main.c        ****     Pin_A2_1_Write(0);
+ 127:main.c        ****     Pin_B1_1_Write(0);
+ 128:main.c        ****     Pin_B2_1_Write(1);
+ 129:main.c        **** }
+ 130:main.c        **** void step4_1() 
+ 131:main.c        **** {
+ 132:main.c        ****     Pin_A1_1_Write(1);
+ 133:main.c        ****     Pin_A2_1_Write(0);
+ 134:main.c        ****     Pin_B1_1_Write(1);
+ 135:main.c        ****     Pin_B2_1_Write(0);
+ 136:main.c        **** }
+ 137:main.c        **** 
+ 138:main.c        **** 
+ 139:main.c        **** /* Pitch */
+ 140:main.c        **** void stopMotor_1() 
+ 141:main.c        **** {
+ 142:main.c        ****     Pin_A1_1_Write(0);
+ 143:main.c        ****     Pin_A2_1_Write(0);
+ 144:main.c        ****     Pin_B1_1_Write(0);
+ 145:main.c        ****     Pin_B2_1_Write(0);
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 4
+
+
+ 146:main.c        ****     CyDelay(25);
+ 147:main.c        **** }
+ 148:main.c        **** 
+ 149:main.c        **** /* Yaw */
+ 150:main.c        **** void stopMotor() 
+ 151:main.c        **** {
+ 152:main.c        ****     Pin_A1_Write(0);
+ 153:main.c        ****     Pin_A2_Write(0);
+ 154:main.c        ****     Pin_B1_Write(0);
+ 155:main.c        ****     Pin_B2_Write(0);
+ 156:main.c        ****     CyDelay(25);
+ 157:main.c        **** }
+ 158:main.c        **** 
+ 159:main.c        **** // Motor "1" is the pitch (up or down) motor.
+ 160:main.c        **** void clockwise_1()
+ 161:main.c        **** {
+ 162:main.c        ****     step1_1(); 
+ 163:main.c        ****     CyDelayUs(delay);
+ 164:main.c        ****     step2_1();
+ 165:main.c        ****     CyDelayUs(delay);
+ 166:main.c        ****     step3_1();
+ 167:main.c        ****     CyDelayUs(delay);
+ 168:main.c        ****     step4_1();
+ 169:main.c        ****     CyDelayUs(delay);
+ 170:main.c        **** }
+ 171:main.c        **** 
+ 172:main.c        **** // Yaw motor motion.
+ 173:main.c        **** void clockwise()
+ 174:main.c        **** {
+ 175:main.c        ****     step1(); 
+ 176:main.c        ****     CyDelayUs(delay);
+ 177:main.c        ****     step2();
+ 178:main.c        ****     CyDelayUs(delay);
+ 179:main.c        ****     step3();
+ 180:main.c        ****     CyDelayUs(delay);
+ 181:main.c        ****     step4();
+ 182:main.c        ****     CyDelayUs(delay);
+ 183:main.c        **** }
+ 184:main.c        **** 
+ 185:main.c        **** void counter_clockwise_1()
+ 186:main.c        **** {
+ 187:main.c        ****     step3_1();
+ 188:main.c        ****     CyDelayUs(delay);
+ 189:main.c        ****     step2_1();
+ 190:main.c        ****     CyDelayUs(delay);
+ 191:main.c        ****     step1_1();
+ 192:main.c        ****     CyDelayUs(delay);
+ 193:main.c        ****     step4_1();
+ 194:main.c        ****     CyDelayUs(delay);
+ 195:main.c        **** }
+ 196:main.c        **** 
+ 197:main.c        **** void counter_clockwise()
+ 198:main.c        **** {
+ 199:main.c        ****     step3();
+ 200:main.c        ****     CyDelayUs(delay);
+ 201:main.c        ****     step2();
+ 202:main.c        ****     CyDelayUs(delay);
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 5
+
+
+ 203:main.c        ****     step1();
+ 204:main.c        ****     CyDelayUs(delay);
+ 205:main.c        ****     step4();
+ 206:main.c        ****     CyDelayUs(delay);
+ 207:main.c        **** }
+ 208:main.c        **** 
+ 209:main.c        **** 
+ 210:main.c        **** /* ISR to detect home position of flash light */
+ 211:main.c        **** CY_ISR(HALL_SENSOR)
+ 212:main.c        **** {
+  27              		.loc 1 212 0
+  28              		.cfi_startproc
+  29              		@ args = 0, pretend = 0, frame = 0
+  30              		@ frame_needed = 0, uses_anonymous_args = 0
+  31              		@ link register save eliminated.
+ 213:main.c        ****     hall_sensor_flag = 1;
+  32              		.loc 1 213 0
+  33 0000 034B     		ldr	r3, .L2
+  34 0002 0122     		movs	r2, #1
+  35 0004 1A70     		strb	r2, [r3]
+ 214:main.c        ****     hall_count++;
+  36              		.loc 1 214 0
+  37 0006 5A68     		ldr	r2, [r3, #4]
+  38 0008 0132     		adds	r2, r2, #1
+  39 000a 5A60     		str	r2, [r3, #4]
+  40 000c 7047     		bx	lr
+  41              	.L3:
+  42 000e 00BF     		.align	2
+  43              	.L2:
+  44 0010 00000000 		.word	.LANCHOR0
+  45              		.cfi_endproc
+  46              	.LFE77:
+  47              		.size	HALL_SENSOR, .-HALL_SENSOR
+  48              		.section	.text.RISING_EDGE_1,"ax",%progbits
+  49              		.align	2
+  50              		.global	RISING_EDGE_1
+  51              		.thumb
+  52              		.thumb_func
+  53              		.type	RISING_EDGE_1, %function
+  54              	RISING_EDGE_1:
+  55              	.LFB78:
+ 215:main.c        **** }
+ 216:main.c        **** 
+ 217:main.c        **** //Interrupt to Start counter1 for ultrasonic sensor1
+ 218:main.c        **** //This interrupt is triggered at the rising edge of the pulse response received from the ultrasonic
+ 219:main.c        **** CY_ISR(RISING_EDGE_1)
+ 220:main.c        **** {
+  56              		.loc 1 220 0
+  57              		.cfi_startproc
+  58              		@ args = 0, pretend = 0, frame = 0
+  59              		@ frame_needed = 0, uses_anonymous_args = 0
+  60 0000 08B5     		push	{r3, lr}
+  61              		.cfi_def_cfa_offset 8
+  62              		.cfi_offset 3, -8
+  63              		.cfi_offset 14, -4
+ 221:main.c        ****     /* The echo pin of the ISR sends back a pulse proportional to the distnce */
+ 222:main.c        ****     /* Use a counter to measure the pulse width, Distance can be derived from this pulse width */
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 6
+
+
+ 223:main.c        ****     Counter_1_Start();
+  64              		.loc 1 223 0
+  65 0002 FFF7FEFF 		bl	Counter_1_Start
+  66              	.LVL0:
+  67 0006 08BD     		pop	{r3, pc}
+  68              		.cfi_endproc
+  69              	.LFE78:
+  70              		.size	RISING_EDGE_1, .-RISING_EDGE_1
+  71              		.global	__aeabi_i2d
+  72              		.global	__aeabi_ddiv
+  73              		.global	__aeabi_d2f
+  74              		.global	__aeabi_fcmplt
+  75              		.global	__aeabi_fcmpgt
+  76              		.global	__aeabi_f2uiz
+  77              		.section	.text.FALLING_EDGE_1,"ax",%progbits
+  78              		.align	2
+  79              		.global	FALLING_EDGE_1
+  80              		.thumb
+  81              		.thumb_func
+  82              		.type	FALLING_EDGE_1, %function
+  83              	FALLING_EDGE_1:
+  84              	.LFB79:
+ 224:main.c        **** }
+ 225:main.c        **** 
+ 226:main.c        **** //Interrupt to Stop counter1 for ultrasonic 1
+ 227:main.c        **** CY_ISR(FALLING_EDGE_1)
+ 228:main.c        **** {
+  85              		.loc 1 228 0
+  86              		.cfi_startproc
+  87              		@ args = 0, pretend = 0, frame = 0
+  88              		@ frame_needed = 0, uses_anonymous_args = 0
+  89 0000 38B5     		push	{r3, r4, r5, lr}
+  90              		.cfi_def_cfa_offset 16
+  91              		.cfi_offset 3, -16
+  92              		.cfi_offset 4, -12
+  93              		.cfi_offset 5, -8
+  94              		.cfi_offset 14, -4
+ 229:main.c        ****     /* Stop the counter, read its content, which indirectly translates to the pulse width */
+ 230:main.c        ****     /* Distance information can be obtained from the pulse width */
+ 231:main.c        ****     Counter_1_Stop();
+  95              		.loc 1 231 0
+  96 0002 FFF7FEFF 		bl	Counter_1_Stop
+  97              	.LVL1:
+ 232:main.c        ****     count = Counter_1_ReadCounter();
+  98              		.loc 1 232 0
+  99 0006 FFF7FEFF 		bl	Counter_1_ReadCounter
+ 100              	.LVL2:
+ 101 000a 1A4C     		ldr	r4, .L14
+ 102 000c A060     		str	r0, [r4, #8]
+ 233:main.c        ****     Counter_1_WriteCounter(0);
+ 103              		.loc 1 233 0
+ 104 000e 0020     		movs	r0, #0
+ 105 0010 FFF7FEFF 		bl	Counter_1_WriteCounter
+ 106              	.LVL3:
+ 234:main.c        ****     
+ 235:main.c        ****     /* Convert the pulse width to distance in cm */
+ 236:main.c        ****     distance = (float)(count / 10.0);
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 7
+
+
+ 107              		.loc 1 236 0
+ 108 0014 A068     		ldr	r0, [r4, #8]
+ 109 0016 FFF7FEFF 		bl	__aeabi_i2d
+ 110              	.LVL4:
+ 111 001a 0022     		movs	r2, #0
+ 112 001c 164B     		ldr	r3, .L14+4
+ 113 001e FFF7FEFF 		bl	__aeabi_ddiv
+ 114              	.LVL5:
+ 115 0022 FFF7FEFF 		bl	__aeabi_d2f
+ 116              	.LVL6:
+ 117 0026 0546     		mov	r5, r0
+ 118 0028 E060     		str	r0, [r4, #12]	@ float
+ 237:main.c        ****     
+ 238:main.c        ****     /* Simple filtering to ignore rouge values */
+ 239:main.c        ****     if ((distance < 150) &&(distance > 30))
+ 119              		.loc 1 239 0
+ 120 002a 1449     		ldr	r1, .L14+8
+ 121 002c FFF7FEFF 		bl	__aeabi_fcmplt
+ 122              	.LVL7:
+ 123 0030 30B1     		cbz	r0, .L7
+ 124              		.loc 1 239 0 is_stmt 0 discriminator 1
+ 125 0032 2846     		mov	r0, r5
+ 126 0034 1249     		ldr	r1, .L14+12
+ 127 0036 FFF7FEFF 		bl	__aeabi_fcmpgt
+ 128              	.LVL8:
+ 129 003a 08B1     		cbz	r0, .L7
+ 240:main.c        ****     {
+ 241:main.c        ****         prev_distance = distance;
+ 130              		.loc 1 241 0 is_stmt 1
+ 131 003c 2561     		str	r5, [r4, #16]	@ float
+ 132 003e 06E0     		b	.L10
+ 133              	.L7:
+ 242:main.c        ****         //good_dx_count++ ;
+ 243:main.c        ****     }
+ 244:main.c        ****     
+ 245:main.c        ****     else
+ 246:main.c        ****     {
+ 247:main.c        ****         distance =  prev_distance; 
+ 134              		.loc 1 247 0
+ 135 0040 0C4B     		ldr	r3, .L14
+ 136 0042 1A69     		ldr	r2, [r3, #16]	@ float
+ 137 0044 DA60     		str	r2, [r3, #12]	@ float
+ 248:main.c        ****         bad_dx_count++;
+ 138              		.loc 1 248 0
+ 139 0046 0F4A     		ldr	r2, .L14+16
+ 140 0048 1368     		ldr	r3, [r2]
+ 141 004a 0133     		adds	r3, r3, #1
+ 142 004c 1360     		str	r3, [r2]
+ 143              	.L10:
+ 249:main.c        ****     }
+ 250:main.c        ****     
+ 251:main.c        ****     // Keep track of often wehave bad counts.
+ 252:main.c        ****     //percent_good_counts = 100. * (float)good_dx_count / (float)bad_dx_count  ;
+ 253:main.c        ****     
+ 254:main.c        ****     /* Print the distances on the LCD */
+ 255:main.c        ****     LCD_Position(0, 1);
+ 144              		.loc 1 255 0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 8
+
+
+ 145 004e 0020     		movs	r0, #0
+ 146 0050 0121     		movs	r1, #1
+ 147 0052 FFF7FEFF 		bl	LCD_Position
+ 148              	.LVL9:
+ 256:main.c        ****     LCD_PrintString("    ");
+ 149              		.loc 1 256 0
+ 150 0056 0C48     		ldr	r0, .L14+20
+ 151 0058 FFF7FEFF 		bl	LCD_PrintString
+ 152              	.LVL10:
+ 257:main.c        ****     LCD_Position(0, 1);
+ 153              		.loc 1 257 0
+ 154 005c 0020     		movs	r0, #0
+ 155 005e 0121     		movs	r1, #1
+ 156 0060 FFF7FEFF 		bl	LCD_Position
+ 157              	.LVL11:
+ 258:main.c        ****     LCD_PrintU32Number(distance);
+ 158              		.loc 1 258 0
+ 159 0064 034B     		ldr	r3, .L14
+ 160 0066 D868     		ldr	r0, [r3, #12]	@ float
+ 161 0068 FFF7FEFF 		bl	__aeabi_f2uiz
+ 162              	.LVL12:
+ 163 006c FFF7FEFF 		bl	LCD_PrintU32Number
+ 164              	.LVL13:
+ 165 0070 38BD     		pop	{r3, r4, r5, pc}
+ 166              	.L15:
+ 167 0072 00BF     		.align	2
+ 168              	.L14:
+ 169 0074 00000000 		.word	.LANCHOR0
+ 170 0078 00002440 		.word	1076101120
+ 171 007c 00001643 		.word	1125515264
+ 172 0080 0000F041 		.word	1106247680
+ 173 0084 00000000 		.word	bad_dx_count
+ 174 0088 00000000 		.word	.LC0
+ 175              		.cfi_endproc
+ 176              	.LFE79:
+ 177              		.size	FALLING_EDGE_1, .-FALLING_EDGE_1
+ 178              		.section	.text.RISING_EDGE_2,"ax",%progbits
+ 179              		.align	2
+ 180              		.global	RISING_EDGE_2
+ 181              		.thumb
+ 182              		.thumb_func
+ 183              		.type	RISING_EDGE_2, %function
+ 184              	RISING_EDGE_2:
+ 185              	.LFB80:
+ 259:main.c        **** }
+ 260:main.c        **** 
+ 261:main.c        **** //Interrupt to Stop counter2 for ultrasonic sensor2
+ 262:main.c        **** //This interrupt is triggered at the rising edge of the pulse response received from the ultrasonic
+ 263:main.c        **** CY_ISR(RISING_EDGE_2)
+ 264:main.c        **** {
+ 186              		.loc 1 264 0
+ 187              		.cfi_startproc
+ 188              		@ args = 0, pretend = 0, frame = 0
+ 189              		@ frame_needed = 0, uses_anonymous_args = 0
+ 190 0000 08B5     		push	{r3, lr}
+ 191              		.cfi_def_cfa_offset 8
+ 192              		.cfi_offset 3, -8
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 9
+
+
+ 193              		.cfi_offset 14, -4
+ 265:main.c        ****     /* The echo pin of the ISR sends back a pulse proportional to the distnce */
+ 266:main.c        ****     /* Use a counter to measure the pulse width, Distance can be derived from this pulse width */
+ 267:main.c        ****     Counter_2_Start();
+ 194              		.loc 1 267 0
+ 195 0002 FFF7FEFF 		bl	Counter_2_Start
+ 196              	.LVL14:
+ 197 0006 08BD     		pop	{r3, pc}
+ 198              		.cfi_endproc
+ 199              	.LFE80:
+ 200              		.size	RISING_EDGE_2, .-RISING_EDGE_2
+ 201              		.section	.text.step1,"ax",%progbits
+ 202              		.align	2
+ 203              		.global	step1
+ 204              		.thumb
+ 205              		.thumb_func
+ 206              		.type	step1, %function
+ 207              	step1:
+ 208              	.LFB63:
+  76:main.c        ****     Pin_A1_Write(0);
+ 209              		.loc 1 76 0
+ 210              		.cfi_startproc
+ 211              		@ args = 0, pretend = 0, frame = 0
+ 212              		@ frame_needed = 0, uses_anonymous_args = 0
+ 213 0000 08B5     		push	{r3, lr}
+ 214              		.cfi_def_cfa_offset 8
+ 215              		.cfi_offset 3, -8
+ 216              		.cfi_offset 14, -4
+  77:main.c        ****     Pin_A2_Write(1);
+ 217              		.loc 1 77 0
+ 218 0002 0020     		movs	r0, #0
+ 219 0004 FFF7FEFF 		bl	Pin_A1_Write
+ 220              	.LVL15:
+  78:main.c        ****     Pin_B1_Write(1);
+ 221              		.loc 1 78 0
+ 222 0008 0120     		movs	r0, #1
+ 223 000a FFF7FEFF 		bl	Pin_A2_Write
+ 224              	.LVL16:
+  79:main.c        ****     Pin_B2_Write(0);
+ 225              		.loc 1 79 0
+ 226 000e 0120     		movs	r0, #1
+ 227 0010 FFF7FEFF 		bl	Pin_B1_Write
+ 228              	.LVL17:
+  80:main.c        **** }
+ 229              		.loc 1 80 0
+ 230 0014 0020     		movs	r0, #0
+ 231 0016 FFF7FEFF 		bl	Pin_B2_Write
+ 232              	.LVL18:
+ 233 001a 08BD     		pop	{r3, pc}
+ 234              		.cfi_endproc
+ 235              	.LFE63:
+ 236              		.size	step1, .-step1
+ 237              		.section	.text.step2,"ax",%progbits
+ 238              		.align	2
+ 239              		.global	step2
+ 240              		.thumb
+ 241              		.thumb_func
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 10
+
+
+ 242              		.type	step2, %function
+ 243              	step2:
+ 244              	.LFB64:
+  84:main.c        ****     Pin_A1_Write(0);
+ 245              		.loc 1 84 0
+ 246              		.cfi_startproc
+ 247              		@ args = 0, pretend = 0, frame = 0
+ 248              		@ frame_needed = 0, uses_anonymous_args = 0
+ 249 0000 08B5     		push	{r3, lr}
+ 250              		.cfi_def_cfa_offset 8
+ 251              		.cfi_offset 3, -8
+ 252              		.cfi_offset 14, -4
+  85:main.c        ****     Pin_A2_Write(1);
+ 253              		.loc 1 85 0
+ 254 0002 0020     		movs	r0, #0
+ 255 0004 FFF7FEFF 		bl	Pin_A1_Write
+ 256              	.LVL19:
+  86:main.c        ****     Pin_B1_Write(0);
+ 257              		.loc 1 86 0
+ 258 0008 0120     		movs	r0, #1
+ 259 000a FFF7FEFF 		bl	Pin_A2_Write
+ 260              	.LVL20:
+  87:main.c        ****     Pin_B2_Write(1);
+ 261              		.loc 1 87 0
+ 262 000e 0020     		movs	r0, #0
+ 263 0010 FFF7FEFF 		bl	Pin_B1_Write
+ 264              	.LVL21:
+  88:main.c        **** }
+ 265              		.loc 1 88 0
+ 266 0014 0120     		movs	r0, #1
+ 267 0016 FFF7FEFF 		bl	Pin_B2_Write
+ 268              	.LVL22:
+ 269 001a 08BD     		pop	{r3, pc}
+ 270              		.cfi_endproc
+ 271              	.LFE64:
+ 272              		.size	step2, .-step2
+ 273              		.section	.text.step3,"ax",%progbits
+ 274              		.align	2
+ 275              		.global	step3
+ 276              		.thumb
+ 277              		.thumb_func
+ 278              		.type	step3, %function
+ 279              	step3:
+ 280              	.LFB65:
+  92:main.c        ****     Pin_A1_Write(1);
+ 281              		.loc 1 92 0
+ 282              		.cfi_startproc
+ 283              		@ args = 0, pretend = 0, frame = 0
+ 284              		@ frame_needed = 0, uses_anonymous_args = 0
+ 285 0000 08B5     		push	{r3, lr}
+ 286              		.cfi_def_cfa_offset 8
+ 287              		.cfi_offset 3, -8
+ 288              		.cfi_offset 14, -4
+  93:main.c        ****     Pin_A2_Write(0);
+ 289              		.loc 1 93 0
+ 290 0002 0120     		movs	r0, #1
+ 291 0004 FFF7FEFF 		bl	Pin_A1_Write
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 11
+
+
+ 292              	.LVL23:
+  94:main.c        ****     Pin_B1_Write(0);
+ 293              		.loc 1 94 0
+ 294 0008 0020     		movs	r0, #0
+ 295 000a FFF7FEFF 		bl	Pin_A2_Write
+ 296              	.LVL24:
+  95:main.c        ****     Pin_B2_Write(1);
+ 297              		.loc 1 95 0
+ 298 000e 0020     		movs	r0, #0
+ 299 0010 FFF7FEFF 		bl	Pin_B1_Write
+ 300              	.LVL25:
+  96:main.c        **** }
+ 301              		.loc 1 96 0
+ 302 0014 0120     		movs	r0, #1
+ 303 0016 FFF7FEFF 		bl	Pin_B2_Write
+ 304              	.LVL26:
+ 305 001a 08BD     		pop	{r3, pc}
+ 306              		.cfi_endproc
+ 307              	.LFE65:
+ 308              		.size	step3, .-step3
+ 309              		.section	.text.step4,"ax",%progbits
+ 310              		.align	2
+ 311              		.global	step4
+ 312              		.thumb
+ 313              		.thumb_func
+ 314              		.type	step4, %function
+ 315              	step4:
+ 316              	.LFB66:
+  99:main.c        ****     Pin_A1_Write(1);
+ 317              		.loc 1 99 0
+ 318              		.cfi_startproc
+ 319              		@ args = 0, pretend = 0, frame = 0
+ 320              		@ frame_needed = 0, uses_anonymous_args = 0
+ 321 0000 08B5     		push	{r3, lr}
+ 322              		.cfi_def_cfa_offset 8
+ 323              		.cfi_offset 3, -8
+ 324              		.cfi_offset 14, -4
+ 100:main.c        ****     Pin_A2_Write(0);
+ 325              		.loc 1 100 0
+ 326 0002 0120     		movs	r0, #1
+ 327 0004 FFF7FEFF 		bl	Pin_A1_Write
+ 328              	.LVL27:
+ 101:main.c        ****     Pin_B1_Write(1);
+ 329              		.loc 1 101 0
+ 330 0008 0020     		movs	r0, #0
+ 331 000a FFF7FEFF 		bl	Pin_A2_Write
+ 332              	.LVL28:
+ 102:main.c        ****     Pin_B2_Write(0);
+ 333              		.loc 1 102 0
+ 334 000e 0120     		movs	r0, #1
+ 335 0010 FFF7FEFF 		bl	Pin_B1_Write
+ 336              	.LVL29:
+ 103:main.c        **** }
+ 337              		.loc 1 103 0
+ 338 0014 0020     		movs	r0, #0
+ 339 0016 FFF7FEFF 		bl	Pin_B2_Write
+ 340              	.LVL30:
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 12
+
+
+ 341 001a 08BD     		pop	{r3, pc}
+ 342              		.cfi_endproc
+ 343              	.LFE66:
+ 344              		.size	step4, .-step4
+ 345              		.section	.text.step1_1,"ax",%progbits
+ 346              		.align	2
+ 347              		.global	step1_1
+ 348              		.thumb
+ 349              		.thumb_func
+ 350              		.type	step1_1, %function
+ 351              	step1_1:
+ 352              	.LFB67:
+ 108:main.c        ****     Pin_A1_1_Write(0);
+ 353              		.loc 1 108 0
+ 354              		.cfi_startproc
+ 355              		@ args = 0, pretend = 0, frame = 0
+ 356              		@ frame_needed = 0, uses_anonymous_args = 0
+ 357 0000 08B5     		push	{r3, lr}
+ 358              		.cfi_def_cfa_offset 8
+ 359              		.cfi_offset 3, -8
+ 360              		.cfi_offset 14, -4
+ 109:main.c        ****     Pin_A2_1_Write(1);
+ 361              		.loc 1 109 0
+ 362 0002 0020     		movs	r0, #0
+ 363 0004 FFF7FEFF 		bl	Pin_A1_1_Write
+ 364              	.LVL31:
+ 110:main.c        ****     Pin_B1_1_Write(1);
+ 365              		.loc 1 110 0
+ 366 0008 0120     		movs	r0, #1
+ 367 000a FFF7FEFF 		bl	Pin_A2_1_Write
+ 368              	.LVL32:
+ 111:main.c        ****     Pin_B2_1_Write(0);
+ 369              		.loc 1 111 0
+ 370 000e 0120     		movs	r0, #1
+ 371 0010 FFF7FEFF 		bl	Pin_B1_1_Write
+ 372              	.LVL33:
+ 112:main.c        **** }
+ 373              		.loc 1 112 0
+ 374 0014 0020     		movs	r0, #0
+ 375 0016 FFF7FEFF 		bl	Pin_B2_1_Write
+ 376              	.LVL34:
+ 377 001a 08BD     		pop	{r3, pc}
+ 378              		.cfi_endproc
+ 379              	.LFE67:
+ 380              		.size	step1_1, .-step1_1
+ 381              		.section	.text.step2_1,"ax",%progbits
+ 382              		.align	2
+ 383              		.global	step2_1
+ 384              		.thumb
+ 385              		.thumb_func
+ 386              		.type	step2_1, %function
+ 387              	step2_1:
+ 388              	.LFB68:
+ 116:main.c        ****     Pin_A1_1_Write(0);
+ 389              		.loc 1 116 0
+ 390              		.cfi_startproc
+ 391              		@ args = 0, pretend = 0, frame = 0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 13
+
+
+ 392              		@ frame_needed = 0, uses_anonymous_args = 0
+ 393 0000 08B5     		push	{r3, lr}
+ 394              		.cfi_def_cfa_offset 8
+ 395              		.cfi_offset 3, -8
+ 396              		.cfi_offset 14, -4
+ 117:main.c        ****     Pin_A2_1_Write(1);
+ 397              		.loc 1 117 0
+ 398 0002 0020     		movs	r0, #0
+ 399 0004 FFF7FEFF 		bl	Pin_A1_1_Write
+ 400              	.LVL35:
+ 118:main.c        ****     Pin_B1_1_Write(0);
+ 401              		.loc 1 118 0
+ 402 0008 0120     		movs	r0, #1
+ 403 000a FFF7FEFF 		bl	Pin_A2_1_Write
+ 404              	.LVL36:
+ 119:main.c        ****     Pin_B2_1_Write(1);
+ 405              		.loc 1 119 0
+ 406 000e 0020     		movs	r0, #0
+ 407 0010 FFF7FEFF 		bl	Pin_B1_1_Write
+ 408              	.LVL37:
+ 120:main.c        **** }
+ 409              		.loc 1 120 0
+ 410 0014 0120     		movs	r0, #1
+ 411 0016 FFF7FEFF 		bl	Pin_B2_1_Write
+ 412              	.LVL38:
+ 413 001a 08BD     		pop	{r3, pc}
+ 414              		.cfi_endproc
+ 415              	.LFE68:
+ 416              		.size	step2_1, .-step2_1
+ 417              		.section	.text.step3_1,"ax",%progbits
+ 418              		.align	2
+ 419              		.global	step3_1
+ 420              		.thumb
+ 421              		.thumb_func
+ 422              		.type	step3_1, %function
+ 423              	step3_1:
+ 424              	.LFB69:
+ 124:main.c        ****     Pin_A1_1_Write(1);
+ 425              		.loc 1 124 0
+ 426              		.cfi_startproc
+ 427              		@ args = 0, pretend = 0, frame = 0
+ 428              		@ frame_needed = 0, uses_anonymous_args = 0
+ 429 0000 08B5     		push	{r3, lr}
+ 430              		.cfi_def_cfa_offset 8
+ 431              		.cfi_offset 3, -8
+ 432              		.cfi_offset 14, -4
+ 125:main.c        ****     Pin_A2_1_Write(0);
+ 433              		.loc 1 125 0
+ 434 0002 0120     		movs	r0, #1
+ 435 0004 FFF7FEFF 		bl	Pin_A1_1_Write
+ 436              	.LVL39:
+ 126:main.c        ****     Pin_B1_1_Write(0);
+ 437              		.loc 1 126 0
+ 438 0008 0020     		movs	r0, #0
+ 439 000a FFF7FEFF 		bl	Pin_A2_1_Write
+ 440              	.LVL40:
+ 127:main.c        ****     Pin_B2_1_Write(1);
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 14
+
+
+ 441              		.loc 1 127 0
+ 442 000e 0020     		movs	r0, #0
+ 443 0010 FFF7FEFF 		bl	Pin_B1_1_Write
+ 444              	.LVL41:
+ 128:main.c        **** }
+ 445              		.loc 1 128 0
+ 446 0014 0120     		movs	r0, #1
+ 447 0016 FFF7FEFF 		bl	Pin_B2_1_Write
+ 448              	.LVL42:
+ 449 001a 08BD     		pop	{r3, pc}
+ 450              		.cfi_endproc
+ 451              	.LFE69:
+ 452              		.size	step3_1, .-step3_1
+ 453              		.section	.text.step4_1,"ax",%progbits
+ 454              		.align	2
+ 455              		.global	step4_1
+ 456              		.thumb
+ 457              		.thumb_func
+ 458              		.type	step4_1, %function
+ 459              	step4_1:
+ 460              	.LFB70:
+ 131:main.c        ****     Pin_A1_1_Write(1);
+ 461              		.loc 1 131 0
+ 462              		.cfi_startproc
+ 463              		@ args = 0, pretend = 0, frame = 0
+ 464              		@ frame_needed = 0, uses_anonymous_args = 0
+ 465 0000 08B5     		push	{r3, lr}
+ 466              		.cfi_def_cfa_offset 8
+ 467              		.cfi_offset 3, -8
+ 468              		.cfi_offset 14, -4
+ 132:main.c        ****     Pin_A2_1_Write(0);
+ 469              		.loc 1 132 0
+ 470 0002 0120     		movs	r0, #1
+ 471 0004 FFF7FEFF 		bl	Pin_A1_1_Write
+ 472              	.LVL43:
+ 133:main.c        ****     Pin_B1_1_Write(1);
+ 473              		.loc 1 133 0
+ 474 0008 0020     		movs	r0, #0
+ 475 000a FFF7FEFF 		bl	Pin_A2_1_Write
+ 476              	.LVL44:
+ 134:main.c        ****     Pin_B2_1_Write(0);
+ 477              		.loc 1 134 0
+ 478 000e 0120     		movs	r0, #1
+ 479 0010 FFF7FEFF 		bl	Pin_B1_1_Write
+ 480              	.LVL45:
+ 135:main.c        **** }
+ 481              		.loc 1 135 0
+ 482 0014 0020     		movs	r0, #0
+ 483 0016 FFF7FEFF 		bl	Pin_B2_1_Write
+ 484              	.LVL46:
+ 485 001a 08BD     		pop	{r3, pc}
+ 486              		.cfi_endproc
+ 487              	.LFE70:
+ 488              		.size	step4_1, .-step4_1
+ 489              		.section	.text.stopMotor_1,"ax",%progbits
+ 490              		.align	2
+ 491              		.global	stopMotor_1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 15
+
+
+ 492              		.thumb
+ 493              		.thumb_func
+ 494              		.type	stopMotor_1, %function
+ 495              	stopMotor_1:
+ 496              	.LFB71:
+ 141:main.c        ****     Pin_A1_1_Write(0);
+ 497              		.loc 1 141 0
+ 498              		.cfi_startproc
+ 499              		@ args = 0, pretend = 0, frame = 0
+ 500              		@ frame_needed = 0, uses_anonymous_args = 0
+ 501 0000 08B5     		push	{r3, lr}
+ 502              		.cfi_def_cfa_offset 8
+ 503              		.cfi_offset 3, -8
+ 504              		.cfi_offset 14, -4
+ 142:main.c        ****     Pin_A2_1_Write(0);
+ 505              		.loc 1 142 0
+ 506 0002 0020     		movs	r0, #0
+ 507 0004 FFF7FEFF 		bl	Pin_A1_1_Write
+ 508              	.LVL47:
+ 143:main.c        ****     Pin_B1_1_Write(0);
+ 509              		.loc 1 143 0
+ 510 0008 0020     		movs	r0, #0
+ 511 000a FFF7FEFF 		bl	Pin_A2_1_Write
+ 512              	.LVL48:
+ 144:main.c        ****     Pin_B2_1_Write(0);
+ 513              		.loc 1 144 0
+ 514 000e 0020     		movs	r0, #0
+ 515 0010 FFF7FEFF 		bl	Pin_B1_1_Write
+ 516              	.LVL49:
+ 145:main.c        ****     CyDelay(25);
+ 517              		.loc 1 145 0
+ 518 0014 0020     		movs	r0, #0
+ 519 0016 FFF7FEFF 		bl	Pin_B2_1_Write
+ 520              	.LVL50:
+ 146:main.c        **** }
+ 521              		.loc 1 146 0
+ 522 001a 1920     		movs	r0, #25
+ 523 001c FFF7FEFF 		bl	CyDelay
+ 524              	.LVL51:
+ 525 0020 08BD     		pop	{r3, pc}
+ 526              		.cfi_endproc
+ 527              	.LFE71:
+ 528              		.size	stopMotor_1, .-stopMotor_1
+ 529 0022 00BF     		.section	.text.stopMotor,"ax",%progbits
+ 530              		.align	2
+ 531              		.global	stopMotor
+ 532              		.thumb
+ 533              		.thumb_func
+ 534              		.type	stopMotor, %function
+ 535              	stopMotor:
+ 536              	.LFB72:
+ 151:main.c        ****     Pin_A1_Write(0);
+ 537              		.loc 1 151 0
+ 538              		.cfi_startproc
+ 539              		@ args = 0, pretend = 0, frame = 0
+ 540              		@ frame_needed = 0, uses_anonymous_args = 0
+ 541 0000 08B5     		push	{r3, lr}
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 16
+
+
+ 542              		.cfi_def_cfa_offset 8
+ 543              		.cfi_offset 3, -8
+ 544              		.cfi_offset 14, -4
+ 152:main.c        ****     Pin_A2_Write(0);
+ 545              		.loc 1 152 0
+ 546 0002 0020     		movs	r0, #0
+ 547 0004 FFF7FEFF 		bl	Pin_A1_Write
+ 548              	.LVL52:
+ 153:main.c        ****     Pin_B1_Write(0);
+ 549              		.loc 1 153 0
+ 550 0008 0020     		movs	r0, #0
+ 551 000a FFF7FEFF 		bl	Pin_A2_Write
+ 552              	.LVL53:
+ 154:main.c        ****     Pin_B2_Write(0);
+ 553              		.loc 1 154 0
+ 554 000e 0020     		movs	r0, #0
+ 555 0010 FFF7FEFF 		bl	Pin_B1_Write
+ 556              	.LVL54:
+ 155:main.c        ****     CyDelay(25);
+ 557              		.loc 1 155 0
+ 558 0014 0020     		movs	r0, #0
+ 559 0016 FFF7FEFF 		bl	Pin_B2_Write
+ 560              	.LVL55:
+ 156:main.c        **** }
+ 561              		.loc 1 156 0
+ 562 001a 1920     		movs	r0, #25
+ 563 001c FFF7FEFF 		bl	CyDelay
+ 564              	.LVL56:
+ 565 0020 08BD     		pop	{r3, pc}
+ 566              		.cfi_endproc
+ 567              	.LFE72:
+ 568              		.size	stopMotor, .-stopMotor
+ 569 0022 00BF     		.section	.text.clockwise_1,"ax",%progbits
+ 570              		.align	2
+ 571              		.global	clockwise_1
+ 572              		.thumb
+ 573              		.thumb_func
+ 574              		.type	clockwise_1, %function
+ 575              	clockwise_1:
+ 576              	.LFB73:
+ 161:main.c        ****     step1_1(); 
+ 577              		.loc 1 161 0
+ 578              		.cfi_startproc
+ 579              		@ args = 0, pretend = 0, frame = 0
+ 580              		@ frame_needed = 0, uses_anonymous_args = 0
+ 581 0000 10B5     		push	{r4, lr}
+ 582              		.cfi_def_cfa_offset 8
+ 583              		.cfi_offset 4, -8
+ 584              		.cfi_offset 14, -4
+ 162:main.c        ****     CyDelayUs(delay);
+ 585              		.loc 1 162 0
+ 586 0002 FFF7FEFF 		bl	step1_1
+ 587              	.LVL57:
+ 163:main.c        ****     step2_1();
+ 588              		.loc 1 163 0
+ 589 0006 0A4C     		ldr	r4, .L40
+ 590 0008 2088     		ldrh	r0, [r4]
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 17
+
+
+ 591 000a FFF7FEFF 		bl	CyDelayUs
+ 592              	.LVL58:
+ 164:main.c        ****     CyDelayUs(delay);
+ 593              		.loc 1 164 0
+ 594 000e FFF7FEFF 		bl	step2_1
+ 595              	.LVL59:
+ 165:main.c        ****     step3_1();
+ 596              		.loc 1 165 0
+ 597 0012 2088     		ldrh	r0, [r4]
+ 598 0014 FFF7FEFF 		bl	CyDelayUs
+ 599              	.LVL60:
+ 166:main.c        ****     CyDelayUs(delay);
+ 600              		.loc 1 166 0
+ 601 0018 FFF7FEFF 		bl	step3_1
+ 602              	.LVL61:
+ 167:main.c        ****     step4_1();
+ 603              		.loc 1 167 0
+ 604 001c 2088     		ldrh	r0, [r4]
+ 605 001e FFF7FEFF 		bl	CyDelayUs
+ 606              	.LVL62:
+ 168:main.c        ****     CyDelayUs(delay);
+ 607              		.loc 1 168 0
+ 608 0022 FFF7FEFF 		bl	step4_1
+ 609              	.LVL63:
+ 169:main.c        **** }
+ 610              		.loc 1 169 0
+ 611 0026 2088     		ldrh	r0, [r4]
+ 612 0028 FFF7FEFF 		bl	CyDelayUs
+ 613              	.LVL64:
+ 614 002c 10BD     		pop	{r4, pc}
+ 615              	.L41:
+ 616 002e 00BF     		.align	2
+ 617              	.L40:
+ 618 0030 00000000 		.word	.LANCHOR1
+ 619              		.cfi_endproc
+ 620              	.LFE73:
+ 621              		.size	clockwise_1, .-clockwise_1
+ 622              		.section	.text.clockwise,"ax",%progbits
+ 623              		.align	2
+ 624              		.global	clockwise
+ 625              		.thumb
+ 626              		.thumb_func
+ 627              		.type	clockwise, %function
+ 628              	clockwise:
+ 629              	.LFB74:
+ 174:main.c        ****     step1(); 
+ 630              		.loc 1 174 0
+ 631              		.cfi_startproc
+ 632              		@ args = 0, pretend = 0, frame = 0
+ 633              		@ frame_needed = 0, uses_anonymous_args = 0
+ 634 0000 10B5     		push	{r4, lr}
+ 635              		.cfi_def_cfa_offset 8
+ 636              		.cfi_offset 4, -8
+ 637              		.cfi_offset 14, -4
+ 175:main.c        ****     CyDelayUs(delay);
+ 638              		.loc 1 175 0
+ 639 0002 FFF7FEFF 		bl	step1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 18
+
+
+ 640              	.LVL65:
+ 176:main.c        ****     step2();
+ 641              		.loc 1 176 0
+ 642 0006 0A4C     		ldr	r4, .L44
+ 643 0008 2088     		ldrh	r0, [r4]
+ 644 000a FFF7FEFF 		bl	CyDelayUs
+ 645              	.LVL66:
+ 177:main.c        ****     CyDelayUs(delay);
+ 646              		.loc 1 177 0
+ 647 000e FFF7FEFF 		bl	step2
+ 648              	.LVL67:
+ 178:main.c        ****     step3();
+ 649              		.loc 1 178 0
+ 650 0012 2088     		ldrh	r0, [r4]
+ 651 0014 FFF7FEFF 		bl	CyDelayUs
+ 652              	.LVL68:
+ 179:main.c        ****     CyDelayUs(delay);
+ 653              		.loc 1 179 0
+ 654 0018 FFF7FEFF 		bl	step3
+ 655              	.LVL69:
+ 180:main.c        ****     step4();
+ 656              		.loc 1 180 0
+ 657 001c 2088     		ldrh	r0, [r4]
+ 658 001e FFF7FEFF 		bl	CyDelayUs
+ 659              	.LVL70:
+ 181:main.c        ****     CyDelayUs(delay);
+ 660              		.loc 1 181 0
+ 661 0022 FFF7FEFF 		bl	step4
+ 662              	.LVL71:
+ 182:main.c        **** }
+ 663              		.loc 1 182 0
+ 664 0026 2088     		ldrh	r0, [r4]
+ 665 0028 FFF7FEFF 		bl	CyDelayUs
+ 666              	.LVL72:
+ 667 002c 10BD     		pop	{r4, pc}
+ 668              	.L45:
+ 669 002e 00BF     		.align	2
+ 670              	.L44:
+ 671 0030 00000000 		.word	.LANCHOR1
+ 672              		.cfi_endproc
+ 673              	.LFE74:
+ 674              		.size	clockwise, .-clockwise
+ 675              		.section	.text.counter_clockwise_1,"ax",%progbits
+ 676              		.align	2
+ 677              		.global	counter_clockwise_1
+ 678              		.thumb
+ 679              		.thumb_func
+ 680              		.type	counter_clockwise_1, %function
+ 681              	counter_clockwise_1:
+ 682              	.LFB75:
+ 186:main.c        ****     step3_1();
+ 683              		.loc 1 186 0
+ 684              		.cfi_startproc
+ 685              		@ args = 0, pretend = 0, frame = 0
+ 686              		@ frame_needed = 0, uses_anonymous_args = 0
+ 687 0000 10B5     		push	{r4, lr}
+ 688              		.cfi_def_cfa_offset 8
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 19
+
+
+ 689              		.cfi_offset 4, -8
+ 690              		.cfi_offset 14, -4
+ 187:main.c        ****     CyDelayUs(delay);
+ 691              		.loc 1 187 0
+ 692 0002 FFF7FEFF 		bl	step3_1
+ 693              	.LVL73:
+ 188:main.c        ****     step2_1();
+ 694              		.loc 1 188 0
+ 695 0006 0A4C     		ldr	r4, .L48
+ 696 0008 2088     		ldrh	r0, [r4]
+ 697 000a FFF7FEFF 		bl	CyDelayUs
+ 698              	.LVL74:
+ 189:main.c        ****     CyDelayUs(delay);
+ 699              		.loc 1 189 0
+ 700 000e FFF7FEFF 		bl	step2_1
+ 701              	.LVL75:
+ 190:main.c        ****     step1_1();
+ 702              		.loc 1 190 0
+ 703 0012 2088     		ldrh	r0, [r4]
+ 704 0014 FFF7FEFF 		bl	CyDelayUs
+ 705              	.LVL76:
+ 191:main.c        ****     CyDelayUs(delay);
+ 706              		.loc 1 191 0
+ 707 0018 FFF7FEFF 		bl	step1_1
+ 708              	.LVL77:
+ 192:main.c        ****     step4_1();
+ 709              		.loc 1 192 0
+ 710 001c 2088     		ldrh	r0, [r4]
+ 711 001e FFF7FEFF 		bl	CyDelayUs
+ 712              	.LVL78:
+ 193:main.c        ****     CyDelayUs(delay);
+ 713              		.loc 1 193 0
+ 714 0022 FFF7FEFF 		bl	step4_1
+ 715              	.LVL79:
+ 194:main.c        **** }
+ 716              		.loc 1 194 0
+ 717 0026 2088     		ldrh	r0, [r4]
+ 718 0028 FFF7FEFF 		bl	CyDelayUs
+ 719              	.LVL80:
+ 720 002c 10BD     		pop	{r4, pc}
+ 721              	.L49:
+ 722 002e 00BF     		.align	2
+ 723              	.L48:
+ 724 0030 00000000 		.word	.LANCHOR1
+ 725              		.cfi_endproc
+ 726              	.LFE75:
+ 727              		.size	counter_clockwise_1, .-counter_clockwise_1
+ 728              		.section	.text.counter_clockwise,"ax",%progbits
+ 729              		.align	2
+ 730              		.global	counter_clockwise
+ 731              		.thumb
+ 732              		.thumb_func
+ 733              		.type	counter_clockwise, %function
+ 734              	counter_clockwise:
+ 735              	.LFB76:
+ 198:main.c        ****     step3();
+ 736              		.loc 1 198 0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 20
+
+
+ 737              		.cfi_startproc
+ 738              		@ args = 0, pretend = 0, frame = 0
+ 739              		@ frame_needed = 0, uses_anonymous_args = 0
+ 740 0000 10B5     		push	{r4, lr}
+ 741              		.cfi_def_cfa_offset 8
+ 742              		.cfi_offset 4, -8
+ 743              		.cfi_offset 14, -4
+ 199:main.c        ****     CyDelayUs(delay);
+ 744              		.loc 1 199 0
+ 745 0002 FFF7FEFF 		bl	step3
+ 746              	.LVL81:
+ 200:main.c        ****     step2();
+ 747              		.loc 1 200 0
+ 748 0006 0A4C     		ldr	r4, .L52
+ 749 0008 2088     		ldrh	r0, [r4]
+ 750 000a FFF7FEFF 		bl	CyDelayUs
+ 751              	.LVL82:
+ 201:main.c        ****     CyDelayUs(delay);
+ 752              		.loc 1 201 0
+ 753 000e FFF7FEFF 		bl	step2
+ 754              	.LVL83:
+ 202:main.c        ****     step1();
+ 755              		.loc 1 202 0
+ 756 0012 2088     		ldrh	r0, [r4]
+ 757 0014 FFF7FEFF 		bl	CyDelayUs
+ 758              	.LVL84:
+ 203:main.c        ****     CyDelayUs(delay);
+ 759              		.loc 1 203 0
+ 760 0018 FFF7FEFF 		bl	step1
+ 761              	.LVL85:
+ 204:main.c        ****     step4();
+ 762              		.loc 1 204 0
+ 763 001c 2088     		ldrh	r0, [r4]
+ 764 001e FFF7FEFF 		bl	CyDelayUs
+ 765              	.LVL86:
+ 205:main.c        ****     CyDelayUs(delay);
+ 766              		.loc 1 205 0
+ 767 0022 FFF7FEFF 		bl	step4
+ 768              	.LVL87:
+ 206:main.c        **** }
+ 769              		.loc 1 206 0
+ 770 0026 2088     		ldrh	r0, [r4]
+ 771 0028 FFF7FEFF 		bl	CyDelayUs
+ 772              	.LVL88:
+ 773 002c 10BD     		pop	{r4, pc}
+ 774              	.L53:
+ 775 002e 00BF     		.align	2
+ 776              	.L52:
+ 777 0030 00000000 		.word	.LANCHOR1
+ 778              		.cfi_endproc
+ 779              	.LFE76:
+ 780              		.size	counter_clockwise, .-counter_clockwise
+ 781              		.global	__aeabi_ui2f
+ 782              		.global	__aeabi_fadd
+ 783              		.global	__aeabi_fdiv
+ 784              		.global	__aeabi_fmul
+ 785              		.global	__aeabi_fsub
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 21
+
+
+ 786              		.global	__aeabi_f2iz
+ 787              		.section	.text.FALLING_EDGE_2,"ax",%progbits
+ 788              		.align	2
+ 789              		.global	FALLING_EDGE_2
+ 790              		.thumb
+ 791              		.thumb_func
+ 792              		.type	FALLING_EDGE_2, %function
+ 793              	FALLING_EDGE_2:
+ 794              	.LFB81:
+ 268:main.c        **** }
+ 269:main.c        **** 
+ 270:main.c        **** //Interrupt to Stop counter1 for ultrasonic 1
+ 271:main.c        **** CY_ISR(FALLING_EDGE_2)
+ 272:main.c        **** {
+ 795              		.loc 1 272 0
+ 796              		.cfi_startproc
+ 797              		@ args = 0, pretend = 0, frame = 0
+ 798              		@ frame_needed = 0, uses_anonymous_args = 0
+ 799 0000 38B5     		push	{r3, r4, r5, lr}
+ 800              		.cfi_def_cfa_offset 16
+ 801              		.cfi_offset 3, -16
+ 802              		.cfi_offset 4, -12
+ 803              		.cfi_offset 5, -8
+ 804              		.cfi_offset 14, -4
+ 273:main.c        ****     /* Stop the counter, read its content, which indirectly translates to the pulse width */
+ 274:main.c        ****     /* Distance information can be obtained from the pulse width */
+ 275:main.c        ****     Counter_2_Stop();
+ 805              		.loc 1 275 0
+ 806 0002 FFF7FEFF 		bl	Counter_2_Stop
+ 807              	.LVL89:
+ 276:main.c        ****     count2 = Counter_2_ReadCounter();
+ 808              		.loc 1 276 0
+ 809 0006 FFF7FEFF 		bl	Counter_2_ReadCounter
+ 810              	.LVL90:
+ 811 000a 804C     		ldr	r4, .L78
+ 812 000c 2060     		str	r0, [r4]
+ 277:main.c        ****     Counter_2_WriteCounter(0);  // Reset count to zero.
+ 813              		.loc 1 277 0
+ 814 000e 0020     		movs	r0, #0
+ 815 0010 FFF7FEFF 		bl	Counter_2_WriteCounter
+ 816              	.LVL91:
+ 278:main.c        ****     
+ 279:main.c        ****     /* Convert the pulse width to distance in cm */
+ 280:main.c        ****     distance2 = (float)(count2 / 10.0);
+ 817              		.loc 1 280 0
+ 818 0014 2068     		ldr	r0, [r4]
+ 819 0016 FFF7FEFF 		bl	__aeabi_i2d
+ 820              	.LVL92:
+ 821 001a 0022     		movs	r2, #0
+ 822 001c 7C4B     		ldr	r3, .L78+4
+ 823 001e FFF7FEFF 		bl	__aeabi_ddiv
+ 824              	.LVL93:
+ 825 0022 FFF7FEFF 		bl	__aeabi_d2f
+ 826              	.LVL94:
+ 827 0026 0446     		mov	r4, r0
+ 828 0028 7A4B     		ldr	r3, .L78+8
+ 829 002a 1860     		str	r0, [r3]	@ float
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 22
+
+
+ 281:main.c        ****     
+ 282:main.c        ****     /* Restricting range of valid values */
+ 283:main.c        ****     if ((distance2 < 150) &&(distance2 > 55))
+ 830              		.loc 1 283 0
+ 831 002c 7A49     		ldr	r1, .L78+12
+ 832 002e FFF7FEFF 		bl	__aeabi_fcmplt
+ 833              	.LVL95:
+ 834 0032 58B1     		cbz	r0, .L55
+ 835              		.loc 1 283 0 is_stmt 0 discriminator 1
+ 836 0034 2046     		mov	r0, r4
+ 837 0036 7949     		ldr	r1, .L78+16
+ 838 0038 FFF7FEFF 		bl	__aeabi_fcmpgt
+ 839              	.LVL96:
+ 840 003c 30B1     		cbz	r0, .L55
+ 284:main.c        ****     {
+ 285:main.c        ****         prev_distance2 = distance2;  // This is a valid distance.
+ 841              		.loc 1 285 0 is_stmt 1
+ 842 003e 784B     		ldr	r3, .L78+20
+ 843 0040 1C60     		str	r4, [r3]	@ float
+ 286:main.c        ****         code_trace_array[0]++ ;
+ 844              		.loc 1 286 0
+ 845 0042 784A     		ldr	r2, .L78+24
+ 846 0044 1368     		ldr	r3, [r2]
+ 847 0046 0133     		adds	r3, r3, #1
+ 848 0048 1360     		str	r3, [r2]
+ 849 004a 07E0     		b	.L58
+ 850              	.L55:
+ 287:main.c        ****     }
+ 288:main.c        ****     
+ 289:main.c        ****     /*  Digital Filtering, We have a narrow window of valid readings
+ 290:main.c        ****         Beyond which we throw the signal away, and use the previous valid reading   
+ 291:main.c        ****     */
+ 292:main.c        ****     else
+ 293:main.c        ****     {
+ 294:main.c        ****         distance2 =  prev_distance2;  
+ 851              		.loc 1 294 0
+ 852 004c 744B     		ldr	r3, .L78+20
+ 853 004e 1A68     		ldr	r2, [r3]	@ float
+ 854 0050 704B     		ldr	r3, .L78+8
+ 855 0052 1A60     		str	r2, [r3]	@ float
+ 295:main.c        ****         bad_event_array[0]++ ;  // "Bad event 0" is when we find an invalid distance.
+ 856              		.loc 1 295 0
+ 857 0054 744A     		ldr	r2, .L78+28
+ 858 0056 1368     		ldr	r3, [r2]
+ 859 0058 0133     		adds	r3, r3, #1
+ 860 005a 1360     		str	r3, [r2]
+ 861              	.L58:
+ 296:main.c        ****     }
+ 297:main.c        ****     
+ 298:main.c        ****     // Keep track of the good distance readings in terms of % wrt bad readings
+ 299:main.c        ****     percent_good_counts = 100.0 * ((float)code_trace_array[0] / ((float)bad_event_array[0] + (float
+ 862              		.loc 1 299 0
+ 863 005c 724B     		ldr	r3, .L78+28
+ 864 005e 1868     		ldr	r0, [r3]
+ 865 0060 FFF7FEFF 		bl	__aeabi_ui2f
+ 866              	.LVL97:
+ 867 0064 0546     		mov	r5, r0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 23
+
+
+ 868 0066 6F4B     		ldr	r3, .L78+24
+ 869 0068 1868     		ldr	r0, [r3]
+ 870 006a FFF7FEFF 		bl	__aeabi_ui2f
+ 871              	.LVL98:
+ 872 006e 0446     		mov	r4, r0
+ 873 0070 2846     		mov	r0, r5
+ 874 0072 2146     		mov	r1, r4
+ 875 0074 FFF7FEFF 		bl	__aeabi_fadd
+ 876              	.LVL99:
+ 877 0078 0146     		mov	r1, r0
+ 878 007a 2046     		mov	r0, r4
+ 879 007c FFF7FEFF 		bl	__aeabi_fdiv
+ 880              	.LVL100:
+ 881 0080 6A4C     		ldr	r4, .L78+32
+ 882 0082 6B49     		ldr	r1, .L78+36
+ 883 0084 FFF7FEFF 		bl	__aeabi_fmul
+ 884              	.LVL101:
+ 885 0088 2060     		str	r0, [r4]	@ float
+ 300:main.c        ****     
+ 301:main.c        ****     // Print out the percentage_good count
+ 302:main.c        ****     LCD_Position(1, 8);
+ 886              		.loc 1 302 0
+ 887 008a 0120     		movs	r0, #1
+ 888 008c 0821     		movs	r1, #8
+ 889 008e FFF7FEFF 		bl	LCD_Position
+ 890              	.LVL102:
+ 303:main.c        ****     LCD_PrintString("       ");
+ 891              		.loc 1 303 0
+ 892 0092 6848     		ldr	r0, .L78+40
+ 893 0094 FFF7FEFF 		bl	LCD_PrintString
+ 894              	.LVL103:
+ 304:main.c        ****     LCD_Position(1, 8);
+ 895              		.loc 1 304 0
+ 896 0098 0120     		movs	r0, #1
+ 897 009a 0821     		movs	r1, #8
+ 898 009c FFF7FEFF 		bl	LCD_Position
+ 899              	.LVL104:
+ 305:main.c        ****     LCD_PrintNumber((uint32)percent_good_counts);
+ 900              		.loc 1 305 0
+ 901 00a0 2068     		ldr	r0, [r4]	@ float
+ 902 00a2 FFF7FEFF 		bl	__aeabi_f2uiz
+ 903              	.LVL105:
+ 904 00a6 80B2     		uxth	r0, r0
+ 905 00a8 FFF7FEFF 		bl	LCD_PrintU32Number
+ 906              	.LVL106:
+ 306:main.c        ****     //sprintf(lcd_string, "%d", (int)percent_good_counts);
+ 307:main.c        ****     //LCD_PrintString(lcd_string);
+ 308:main.c        ****     
+ 309:main.c        ****     /* Print the distances on the LCD */
+ 310:main.c        ****     LCD_Position(1, 1);
+ 907              		.loc 1 310 0
+ 908 00ac 0120     		movs	r0, #1
+ 909 00ae 0146     		mov	r1, r0
+ 910 00b0 FFF7FEFF 		bl	LCD_Position
+ 911              	.LVL107:
+ 311:main.c        ****     LCD_PrintString("    ");
+ 912              		.loc 1 311 0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 24
+
+
+ 913 00b4 6048     		ldr	r0, .L78+44
+ 914 00b6 FFF7FEFF 		bl	LCD_PrintString
+ 915              	.LVL108:
+ 312:main.c        ****     LCD_Position(1, 1);
+ 916              		.loc 1 312 0
+ 917 00ba 0120     		movs	r0, #1
+ 918 00bc 0146     		mov	r1, r0
+ 919 00be FFF7FEFF 		bl	LCD_Position
+ 920              	.LVL109:
+ 313:main.c        ****     LCD_PrintU32Number(distance2);
+ 921              		.loc 1 313 0
+ 922 00c2 544C     		ldr	r4, .L78+8
+ 923 00c4 2068     		ldr	r0, [r4]	@ float
+ 924 00c6 FFF7FEFF 		bl	__aeabi_f2uiz
+ 925              	.LVL110:
+ 926 00ca FFF7FEFF 		bl	LCD_PrintU32Number
+ 927              	.LVL111:
+ 314:main.c        ****     
+ 315:main.c        ****     #if 1
+ 316:main.c        ****     LCD_Position(0, 8);
+ 928              		.loc 1 316 0
+ 929 00ce 0020     		movs	r0, #0
+ 930 00d0 0821     		movs	r1, #8
+ 931 00d2 FFF7FEFF 		bl	LCD_Position
+ 932              	.LVL112:
+ 317:main.c        ****     LCD_PrintString( "D:    " );
+ 933              		.loc 1 317 0
+ 934 00d6 5948     		ldr	r0, .L78+48
+ 935 00d8 FFF7FEFF 		bl	LCD_PrintString
+ 936              	.LVL113:
+ 318:main.c        ****     LCD_Position(0, 10);
+ 937              		.loc 1 318 0
+ 938 00dc 0020     		movs	r0, #0
+ 939 00de 0A21     		movs	r1, #10
+ 940 00e0 FFF7FEFF 		bl	LCD_Position
+ 941              	.LVL114:
+ 319:main.c        ****     difference = distance - distance2;
+ 942              		.loc 1 319 0
+ 943 00e4 564B     		ldr	r3, .L78+52
+ 944 00e6 D868     		ldr	r0, [r3, #12]	@ float
+ 945 00e8 2168     		ldr	r1, [r4]	@ float
+ 946 00ea FFF7FEFF 		bl	__aeabi_fsub
+ 947              	.LVL115:
+ 948 00ee FFF7FEFF 		bl	__aeabi_f2iz
+ 949              	.LVL116:
+ 950 00f2 544B     		ldr	r3, .L78+56
+ 951 00f4 1860     		str	r0, [r3]
+ 320:main.c        ****     
+ 321:main.c        ****     // Determine the correct elevation...
+ 322:main.c        ****     //elevation_index = K1 * difference ;  // K1 is just a guess.
+ 323:main.c        ****  
+ 324:main.c        ****     // Check for the array index being out of bounds.
+ 325:main.c        ****     //if( elevation_index < 0 )
+ 326:main.c        ****       //elevation_index = 0 ;
+ 327:main.c        ****         
+ 328:main.c        ****     //if(elevation_index > 29)
+ 329:main.c        ****       //elevation_index = 29 ;
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 25
+
+
+ 330:main.c        ****     
+ 331:main.c        ****     // This gives the number of steps to move the beam up.
+ 332:main.c        ****     //elevation_step_count = elevation_table[elevation_index] ;
+ 333:main.c        ****     
+ 334:main.c        ****     if (difference < 0)
+ 952              		.loc 1 334 0
+ 953 00f6 0028     		cmp	r0, #0
+ 954 00f8 09DA     		bge	.L59
+ 335:main.c        ****     {
+ 336:main.c        ****        LCD_PutChar('-');
+ 955              		.loc 1 336 0
+ 956 00fa 2D20     		movs	r0, #45
+ 957 00fc FFF7FEFF 		bl	LCD_PutChar
+ 958              	.LVL117:
+ 337:main.c        ****        LCD_PrintNumber(-1 * difference);  
+ 959              		.loc 1 337 0
+ 960 0100 504B     		ldr	r3, .L78+56
+ 961 0102 1868     		ldr	r0, [r3]
+ 962 0104 4042     		negs	r0, r0
+ 963 0106 80B2     		uxth	r0, r0
+ 964 0108 FFF7FEFF 		bl	LCD_PrintU32Number
+ 965              	.LVL118:
+ 966 010c 02E0     		b	.L60
+ 967              	.L59:
+ 338:main.c        ****     }
+ 339:main.c        ****     
+ 340:main.c        ****     else
+ 341:main.c        ****     {
+ 342:main.c        ****         LCD_PrintNumber(difference);
+ 968              		.loc 1 342 0
+ 969 010e 80B2     		uxth	r0, r0
+ 970 0110 FFF7FEFF 		bl	LCD_PrintU32Number
+ 971              	.LVL119:
+ 972              	.L60:
+ 343:main.c        ****     }
+ 344:main.c        ****     #endif
+ 345:main.c        ****     
+ 346:main.c        ****     sensor_delay_count++;
+ 973              		.loc 1 346 0
+ 974 0114 4A4A     		ldr	r2, .L78+52
+ 975 0116 5369     		ldr	r3, [r2, #20]
+ 976 0118 0133     		adds	r3, r3, #1
+ 977 011a 5361     		str	r3, [r2, #20]
+ 347:main.c        ****     
+ 348:main.c        ****     #if 0
+ 349:main.c        ****     /* Need an equation to relate the difference with the number of steps */
+ 350:main.c        ****     /* Detect the tilt to the left, and move the motor */
+ 351:main.c        ****     if ((difference > 4) && (difference < 11) && (ccw_flag == 0))
+ 352:main.c        ****     {
+ 353:main.c        ****         //difference = -1 * difference;
+ 354:main.c        ****         no_of_steps = 10;
+ 355:main.c        ****         ccw_flag = 1;
+ 356:main.c        ****         
+ 357:main.c        ****         for(i = 0; i < no_of_steps; i++)
+ 358:main.c        ****         {
+ 359:main.c        ****             counter_clockwise();
+ 360:main.c        ****         }
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 26
+
+
+ 361:main.c        ****         
+ 362:main.c        ****         for (i = 0; i < pitch_limit; i++)
+ 363:main.c        ****         counter_clockwise_1();
+ 364:main.c        ****     }
+ 365:main.c        ****     
+ 366:main.c        ****     else if ((difference <= 4) && (difference > -4)  && (ccw_flag == 1))
+ 367:main.c        ****     {
+ 368:main.c        ****         #if 0
+ 369:main.c        ****         while (Digital_Out_P3_0_Read())
+ 370:main.c        ****         {
+ 371:main.c        ****             clockwise();   
+ 372:main.c        ****         }
+ 373:main.c        ****         
+ 374:main.c        ****         for (i = 0; i < 2; i++)
+ 375:main.c        ****             clockwise();
+ 376:main.c        ****             
+ 377:main.c        ****             stopMotor();
+ 378:main.c        ****         
+ 379:main.c        ****         
+ 380:main.c        ****         #else
+ 381:main.c        ****         
+ 382:main.c        ****         for (i = 0; i < pitch_limit; i++)
+ 383:main.c        ****         clockwise_1();
+ 384:main.c        ****         
+ 385:main.c        ****         for(i = 0; i < no_of_steps; i++)
+ 386:main.c        ****         {
+ 387:main.c        ****             clockwise();
+ 388:main.c        ****         }
+ 389:main.c        ****         ccw_flag = 0;
+ 390:main.c        ****         #endif
+ 391:main.c        ****         
+ 392:main.c        ****         
+ 393:main.c        ****     }
+ 394:main.c        **** //    // modify
+ 395:main.c        **** //    if ((difference < -4) && (difference > -9) && (cw_flag == 0))
+ 396:main.c        **** //    {
+ 397:main.c        **** //        //difference = -1 * difference;
+ 398:main.c        **** //        no_of_steps = 10;
+ 399:main.c        **** //        cw_flag = 1;
+ 400:main.c        **** //        
+ 401:main.c        **** //        for(i = 0; i < no_of_steps; i++)
+ 402:main.c        **** //        {
+ 403:main.c        **** //            clockwise();
+ 404:main.c        **** //        }
+ 405:main.c        **** //        
+ 406:main.c        **** //        for (i = 0; i < pitch_limit; i++)
+ 407:main.c        **** //        clockwise_1();
+ 408:main.c        **** //    }
+ 409:main.c        **** //    
+ 410:main.c        **** //    else if ((difference > -1) && (difference < 4)  && (cw_flag == 1))
+ 411:main.c        **** //    {
+ 412:main.c        **** //        #if 0
+ 413:main.c        **** //        while (Digital_Out_P3_0_Read())
+ 414:main.c        **** //        {
+ 415:main.c        **** //            clockwise();   
+ 416:main.c        **** //        }
+ 417:main.c        **** //        
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 27
+
+
+ 418:main.c        **** //        for (i = 0; i < 2; i++)
+ 419:main.c        **** //            clockwise();
+ 420:main.c        **** //            
+ 421:main.c        **** //            stopMotor();
+ 422:main.c        **** //        
+ 423:main.c        **** //        
+ 424:main.c        **** //        #else
+ 425:main.c        **** //        
+ 426:main.c        **** //        for (i = 0; i < pitch_limit; i++)
+ 427:main.c        **** //        counter_clockwise_1();
+ 428:main.c        **** //        
+ 429:main.c        **** //        for(i = 0; i < no_of_steps; i++)
+ 430:main.c        **** //        {
+ 431:main.c        **** //            counter_clockwise();
+ 432:main.c        **** //        }
+ 433:main.c        **** //        cw_flag = 0;
+ 434:main.c        **** //        #endif
+ 435:main.c        **** //        
+ 436:main.c        **** //        
+ 437:main.c        **** //    }
+ 438:main.c        **** //    //end modify
+ 439:main.c        ****         #if 1
+ 440:main.c        ****         if ((difference < -4) && (difference > -11)&& (cw_flag == 0))
+ 441:main.c        ****         {
+ 442:main.c        ****             //difference = -1 * difference;
+ 443:main.c        ****             no_of_steps = 10;
+ 444:main.c        ****             cw_flag = 1;
+ 445:main.c        ****             
+ 446:main.c        ****             for(i = 0; i < no_of_steps; i++)
+ 447:main.c        ****             {
+ 448:main.c        ****                 clockwise();
+ 449:main.c        ****             }
+ 450:main.c        ****             
+ 451:main.c        ****             for (i = 0; i < pitch_limit; i++)
+ 452:main.c        ****             counter_clockwise_1();
+ 453:main.c        ****         }
+ 454:main.c        ****         
+ 455:main.c        ****         else if ((difference > -4) && (difference < 4) && (cw_flag == 1))
+ 456:main.c        ****         {
+ 457:main.c        ****             #if 0
+ 458:main.c        ****             while (Digital_Out_P3_0_Read())
+ 459:main.c        ****             {
+ 460:main.c        ****                 counter_clockwise();   
+ 461:main.c        ****             }
+ 462:main.c        ****             
+ 463:main.c        ****             //for (i = 0; i < 2; i++)
+ 464:main.c        ****                 counter_clockwise(); 
+ 465:main.c        ****                 
+ 466:main.c        ****                 stopMotor();
+ 467:main.c        ****            
+ 468:main.c        ****             
+ 469:main.c        ****             #else
+ 470:main.c        ****             
+ 471:main.c        ****             for (i = 0; i < pitch_limit; i++)
+ 472:main.c        ****                 clockwise_1();
+ 473:main.c        ****             
+ 474:main.c        ****             for(i = 0; i < no_of_steps; i++)
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 28
+
+
+ 475:main.c        ****             {
+ 476:main.c        ****                 counter_clockwise();
+ 477:main.c        ****             }
+ 478:main.c        ****             cw_flag = 0;
+ 479:main.c        ****             #endif
+ 480:main.c        ****         }
+ 481:main.c        ****         #endif
+ 482:main.c        ****     //Indexing
+ 483:main.c        ****     
+ 484:main.c        ****     #else
+ 485:main.c        ****         
+ 486:main.c        ****     if ((sensor_delay_count % 4) == 0)
+ 978              		.loc 1 486 0
+ 979 011c 13F0030F 		tst	r3, #3
+ 980 0120 72D1     		bne	.L54
+ 487:main.c        ****     {
+ 488:main.c        ****         if (((difference >= -5) && (difference <= -1)) || ((difference >= 1) && (difference <= 5)))
+ 981              		.loc 1 488 0
+ 982 0122 484B     		ldr	r3, .L78+56
+ 983 0124 1B68     		ldr	r3, [r3]
+ 984 0126 5A1D     		adds	r2, r3, #5
+ 985 0128 042A     		cmp	r2, #4
+ 986 012a 02D9     		bls	.L62
+ 987              		.loc 1 488 0 is_stmt 0 discriminator 1
+ 988 012c 5A1E     		subs	r2, r3, #1
+ 989 012e 042A     		cmp	r2, #4
+ 990 0130 6AD8     		bhi	.L54
+ 991              	.L62:
+ 489:main.c        ****         {
+ 490:main.c        ****             // Pointing to the right index in the lookup table based on the difference readings
+ 491:main.c        ****             // Yaw lookup table
+ 492:main.c        ****             yaw_index = difference + 5;
+ 992              		.loc 1 492 0 is_stmt 1
+ 993 0132 581D     		adds	r0, r3, #5
+ 994 0134 424C     		ldr	r4, .L78+52
+ 995 0136 A061     		str	r0, [r4, #24]
+ 493:main.c        ****             no_of_steps = yaw_table[yaw_index];
+ 996              		.loc 1 493 0
+ 997 0138 434B     		ldr	r3, .L78+60
+ 998 013a 03EB8005 		add	r5, r3, r0, lsl #2
+ 999 013e A988     		ldrh	r1, [r5, #4]
+ 1000 0140 1986     		strh	r1, [r3, #48]	@ movhi
+ 494:main.c        ****             move_steps = no_of_steps - yaw_table[prev_yaw_index];
+ 1001              		.loc 1 494 0
+ 1002 0142 5A6B     		ldr	r2, [r3, #52]
+ 1003 0144 03EB8202 		add	r2, r3, r2, lsl #2
+ 1004 0148 5268     		ldr	r2, [r2, #4]
+ 1005 014a 09B2     		sxth	r1, r1
+ 1006 014c 8A1A     		subs	r2, r1, r2
+ 1007 014e E261     		str	r2, [r4, #28]
+ 495:main.c        ****             
+ 496:main.c        ****             // Pitch lookup table
+ 497:main.c        ****             pitch_index = difference + 5;
+ 1008              		.loc 1 497 0
+ 1009 0150 2062     		str	r0, [r4, #32]
+ 498:main.c        ****             pitch_no_of_steps = pitch_table[pitch_index];
+ 1010              		.loc 1 498 0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 29
+
+
+ 1011 0152 A96B     		ldr	r1, [r5, #56]
+ 1012 0154 6162     		str	r1, [r4, #36]
+ 499:main.c        ****             pitch_move_steps = pitch_no_of_steps - pitch_table[prev_pitch_index];
+ 1013              		.loc 1 499 0
+ 1014 0156 586E     		ldr	r0, [r3, #100]
+ 1015 0158 03EB8003 		add	r3, r3, r0, lsl #2
+ 1016 015c 9B6B     		ldr	r3, [r3, #56]
+ 1017 015e C91A     		subs	r1, r1, r3
+ 1018 0160 A162     		str	r1, [r4, #40]
+ 500:main.c        ****             
+ 501:main.c        ****             // clockwise
+ 502:main.c        ****             if (move_steps < 0)
+ 1019              		.loc 1 502 0
+ 1020 0162 002A     		cmp	r2, #0
+ 1021 0164 12DA     		bge	.L63
+ 503:main.c        ****             {
+ 504:main.c        ****                 move_steps = -1 * move_steps;
+ 1022              		.loc 1 504 0
+ 1023 0166 5242     		negs	r2, r2
+ 1024 0168 E261     		str	r2, [r4, #28]
+ 505:main.c        ****                 
+ 506:main.c        ****                 // no of steps to move is obtained from the lookup table based on index obtained 
+ 507:main.c        ****                 // in the previous step
+ 508:main.c        ****                 for (i = 0; i < move_steps; i++)
+ 1025              		.loc 1 508 0
+ 1026 016a 0022     		movs	r2, #0
+ 1027 016c 374B     		ldr	r3, .L78+64
+ 1028 016e 1A60     		str	r2, [r3]
+ 1029 0170 05E0     		b	.L64
+ 1030              	.L65:
+ 509:main.c        ****                 {
+ 510:main.c        ****                     clockwise();  
+ 1031              		.loc 1 510 0 discriminator 3
+ 1032 0172 FFF7FEFF 		bl	clockwise
+ 1033              	.LVL120:
+ 508:main.c        ****                 {
+ 1034              		.loc 1 508 0 discriminator 3
+ 1035 0176 354A     		ldr	r2, .L78+64
+ 1036 0178 1368     		ldr	r3, [r2]
+ 1037 017a 0133     		adds	r3, r3, #1
+ 1038 017c 1360     		str	r3, [r2]
+ 1039              	.L64:
+ 508:main.c        ****                 {
+ 1040              		.loc 1 508 0 is_stmt 0 discriminator 1
+ 1041 017e 334B     		ldr	r3, .L78+64
+ 1042 0180 1A68     		ldr	r2, [r3]
+ 1043 0182 2F4B     		ldr	r3, .L78+52
+ 1044 0184 DB69     		ldr	r3, [r3, #28]
+ 1045 0186 9A42     		cmp	r2, r3
+ 1046 0188 F3DB     		blt	.L65
+ 1047 018a 0FE0     		b	.L66
+ 1048              	.L63:
+ 511:main.c        ****                 }
+ 512:main.c        ****             }
+ 513:main.c        ****             
+ 514:main.c        ****             //counter_clockwise
+ 515:main.c        ****             else
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 30
+
+
+ 516:main.c        ****             {
+ 517:main.c        ****                 //no of steps to move is obtained from the lookup table based on index obtained 
+ 518:main.c        ****                 //in the previous step
+ 519:main.c        ****                 for (i = 0; i < move_steps; i++)
+ 1049              		.loc 1 519 0 is_stmt 1
+ 1050 018c 0022     		movs	r2, #0
+ 1051 018e 2F4B     		ldr	r3, .L78+64
+ 1052 0190 1A60     		str	r2, [r3]
+ 1053 0192 05E0     		b	.L67
+ 1054              	.L68:
+ 520:main.c        ****                 {
+ 521:main.c        ****                     counter_clockwise();  
+ 1055              		.loc 1 521 0 discriminator 3
+ 1056 0194 FFF7FEFF 		bl	counter_clockwise
+ 1057              	.LVL121:
+ 519:main.c        ****                 {
+ 1058              		.loc 1 519 0 discriminator 3
+ 1059 0198 2C4A     		ldr	r2, .L78+64
+ 1060 019a 1368     		ldr	r3, [r2]
+ 1061 019c 0133     		adds	r3, r3, #1
+ 1062 019e 1360     		str	r3, [r2]
+ 1063              	.L67:
+ 519:main.c        ****                 {
+ 1064              		.loc 1 519 0 is_stmt 0 discriminator 1
+ 1065 01a0 2A4B     		ldr	r3, .L78+64
+ 1066 01a2 1A68     		ldr	r2, [r3]
+ 1067 01a4 264B     		ldr	r3, .L78+52
+ 1068 01a6 DB69     		ldr	r3, [r3, #28]
+ 1069 01a8 9A42     		cmp	r2, r3
+ 1070 01aa F3DB     		blt	.L68
+ 1071              	.L66:
+ 522:main.c        ****                 }  
+ 523:main.c        ****             }
+ 524:main.c        ****             
+ 525:main.c        ****             // Pitch motor control
+ 526:main.c        ****             // Moved away from home position
+ 527:main.c        ****             if (pitch_move_steps > 0)
+ 1072              		.loc 1 527 0 is_stmt 1
+ 1073 01ac 244B     		ldr	r3, .L78+52
+ 1074 01ae 9B6A     		ldr	r3, [r3, #40]
+ 1075 01b0 002B     		cmp	r3, #0
+ 1076 01b2 10DD     		ble	.L69
+ 528:main.c        ****             {
+ 529:main.c        ****                 //pitch motor has to move up
+ 530:main.c        ****                 for (i = 0; i < pitch_move_steps; i++)
+ 1077              		.loc 1 530 0
+ 1078 01b4 0022     		movs	r2, #0
+ 1079 01b6 254B     		ldr	r3, .L78+64
+ 1080 01b8 1A60     		str	r2, [r3]
+ 1081 01ba 05E0     		b	.L70
+ 1082              	.L71:
+ 531:main.c        ****                 {
+ 532:main.c        ****                    counter_clockwise_1(); 
+ 1083              		.loc 1 532 0 discriminator 3
+ 1084 01bc FFF7FEFF 		bl	counter_clockwise_1
+ 1085              	.LVL122:
+ 530:main.c        ****                 {
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 31
+
+
+ 1086              		.loc 1 530 0 discriminator 3
+ 1087 01c0 224A     		ldr	r2, .L78+64
+ 1088 01c2 1368     		ldr	r3, [r2]
+ 1089 01c4 0133     		adds	r3, r3, #1
+ 1090 01c6 1360     		str	r3, [r2]
+ 1091              	.L70:
+ 530:main.c        ****                 {
+ 1092              		.loc 1 530 0 is_stmt 0 discriminator 1
+ 1093 01c8 204B     		ldr	r3, .L78+64
+ 1094 01ca 1A68     		ldr	r2, [r3]
+ 1095 01cc 1C4B     		ldr	r3, .L78+52
+ 1096 01ce 9B6A     		ldr	r3, [r3, #40]
+ 1097 01d0 9A42     		cmp	r2, r3
+ 1098 01d2 F3DB     		blt	.L71
+ 1099 01d4 12E0     		b	.L72
+ 1100              	.L69:
+ 533:main.c        ****                 
+ 534:main.c        ****                 }
+ 535:main.c        ****                 
+ 536:main.c        ****             }
+ 537:main.c        ****             
+ 538:main.c        ****             // Motor moving towards home position
+ 539:main.c        ****             else
+ 540:main.c        ****             {
+ 541:main.c        ****                 // Need 
+ 542:main.c        ****                 pitch_move_steps = -1 * pitch_move_steps;
+ 1101              		.loc 1 542 0 is_stmt 1
+ 1102 01d6 5B42     		negs	r3, r3
+ 1103 01d8 194A     		ldr	r2, .L78+52
+ 1104 01da 9362     		str	r3, [r2, #40]
+ 543:main.c        ****                 
+ 544:main.c        ****                 // pitch motor has to move down
+ 545:main.c        ****                 for (i = 0; i < pitch_move_steps; i++)
+ 1105              		.loc 1 545 0
+ 1106 01dc 0022     		movs	r2, #0
+ 1107 01de 1B4B     		ldr	r3, .L78+64
+ 1108 01e0 1A60     		str	r2, [r3]
+ 1109 01e2 05E0     		b	.L73
+ 1110              	.L74:
+ 546:main.c        ****                 {
+ 547:main.c        ****                    clockwise_1(); 
+ 1111              		.loc 1 547 0 discriminator 3
+ 1112 01e4 FFF7FEFF 		bl	clockwise_1
+ 1113              	.LVL123:
+ 545:main.c        ****                 {
+ 1114              		.loc 1 545 0 discriminator 3
+ 1115 01e8 184A     		ldr	r2, .L78+64
+ 1116 01ea 1368     		ldr	r3, [r2]
+ 1117 01ec 0133     		adds	r3, r3, #1
+ 1118 01ee 1360     		str	r3, [r2]
+ 1119              	.L73:
+ 545:main.c        ****                 {
+ 1120              		.loc 1 545 0 is_stmt 0 discriminator 1
+ 1121 01f0 164B     		ldr	r3, .L78+64
+ 1122 01f2 1A68     		ldr	r2, [r3]
+ 1123 01f4 124B     		ldr	r3, .L78+52
+ 1124 01f6 9B6A     		ldr	r3, [r3, #40]
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 32
+
+
+ 1125 01f8 9A42     		cmp	r2, r3
+ 1126 01fa F3DB     		blt	.L74
+ 1127              	.L72:
+ 548:main.c        ****                 } 
+ 549:main.c        ****             }
+ 550:main.c        ****             
+ 551:main.c        ****             prev_pitch_index = pitch_index;
+ 1128              		.loc 1 551 0 is_stmt 1
+ 1129 01fc 124B     		ldr	r3, .L78+60
+ 1130 01fe 104A     		ldr	r2, .L78+52
+ 1131 0200 116A     		ldr	r1, [r2, #32]
+ 1132 0202 5966     		str	r1, [r3, #100]
+ 552:main.c        ****             prev_yaw_index = yaw_index;
+ 1133              		.loc 1 552 0
+ 1134 0204 9269     		ldr	r2, [r2, #24]
+ 1135 0206 5A63     		str	r2, [r3, #52]
+ 1136              	.L54:
+ 1137 0208 38BD     		pop	{r3, r4, r5, pc}
+ 1138              	.L79:
+ 1139 020a 00BF     		.align	2
+ 1140              	.L78:
+ 1141 020c 00000000 		.word	count2
+ 1142 0210 00002440 		.word	1076101120
+ 1143 0214 00000000 		.word	distance2
+ 1144 0218 00001643 		.word	1125515264
+ 1145 021c 00005C42 		.word	1113325568
+ 1146 0220 00000000 		.word	prev_distance2
+ 1147 0224 00000000 		.word	code_trace_array
+ 1148 0228 00000000 		.word	bad_event_array
+ 1149 022c 00000000 		.word	percent_good_counts
+ 1150 0230 0000C842 		.word	1120403456
+ 1151 0234 08000000 		.word	.LC1
+ 1152 0238 00000000 		.word	.LC0
+ 1153 023c 10000000 		.word	.LC2
+ 1154 0240 00000000 		.word	.LANCHOR0
+ 1155 0244 00000000 		.word	difference
+ 1156 0248 00000000 		.word	.LANCHOR1
+ 1157 024c 00000000 		.word	i
+ 1158              		.cfi_endproc
+ 1159              	.LFE81:
+ 1160              		.size	FALLING_EDGE_2, .-FALLING_EDGE_2
+ 1161              		.section	.text.main,"ax",%progbits
+ 1162              		.align	2
+ 1163              		.global	main
+ 1164              		.thumb
+ 1165              		.thumb_func
+ 1166              		.type	main, %function
+ 1167              	main:
+ 1168              	.LFB82:
+ 553:main.c        ****         }
+ 554:main.c        ****         
+ 555:main.c        **** //        else if ((difference >= -5) && (difference < 0))
+ 556:main.c        **** //        {
+ 557:main.c        **** //            yaw_index = difference + 5;
+ 558:main.c        **** //            
+ 559:main.c        **** //            no_of_steps = -1 * yaw_table[yaw_index];
+ 560:main.c        **** //            move_steps = no_of_steps - yaw_table[prev_yaw_index];
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 33
+
+
+ 561:main.c        **** //            
+ 562:main.c        **** //            //clockwise
+ 563:main.c        **** //            if (move_steps < 0)
+ 564:main.c        **** //            {
+ 565:main.c        **** //                move_steps = -1 * move_steps;
+ 566:main.c        **** //                
+ 567:main.c        **** //                for (i = 0; i < move_steps; i++)
+ 568:main.c        **** //                {
+ 569:main.c        **** //                    clockwise();  
+ 570:main.c        **** //                }
+ 571:main.c        **** //            }
+ 572:main.c        **** //            
+ 573:main.c        **** ////            else if (move_steps == 0)
+ 574:main.c        **** ////            {
+ 575:main.c        **** ////                
+ 576:main.c        **** ////            }
+ 577:main.c        **** //            
+ 578:main.c        **** //            else if (move_steps > 0)
+ 579:main.c        **** //            {
+ 580:main.c        **** //                for (i = 0; i < move_steps; i++)
+ 581:main.c        **** //                {
+ 582:main.c        **** //                    counter_clockwise();  
+ 583:main.c        **** //                }  
+ 584:main.c        **** //            }
+ 585:main.c        **** //            
+ 586:main.c        **** //            prev_yaw_index = yaw_index; 
+ 587:main.c        **** //        }
+ 588:main.c        ****     }
+ 589:main.c        ****     #endif
+ 590:main.c        **** }
+ 591:main.c        **** 
+ 592:main.c        **** 
+ 593:main.c        **** 
+ 594:main.c        **** 
+ 595:main.c        **** 
+ 596:main.c        **** 
+ 597:main.c        **** /////////////////////////////////  Start of main.c  ////////////////////////////////////
+ 598:main.c        **** //
+ 599:main.c        **** int main(void)
+ 600:main.c        **** {
+ 1169              		.loc 1 600 0
+ 1170              		.cfi_startproc
+ 1171              		@ Volatile: function does not return.
+ 1172              		@ args = 0, pretend = 0, frame = 0
+ 1173              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1174 0000 08B5     		push	{r3, lr}
+ 1175              		.cfi_def_cfa_offset 8
+ 1176              		.cfi_offset 3, -8
+ 1177              		.cfi_offset 14, -4
+ 601:main.c        ****     CyGlobalIntEnable; /* Enable global interrupts. */
+ 1178              		.loc 1 601 0
+ 1179              	@ 601 "main.c" 1
+ 1180 0002 62B6     		CPSIE   i
+ 1181              	@ 0 "" 2
+ 602:main.c        **** 
+ 603:main.c        ****     // Start LCD module
+ 604:main.c        ****     LCD_Start( );	
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 34
+
+
+ 1182              		.loc 1 604 0
+ 1183              		.thumb
+ 1184 0004 FFF7FEFF 		bl	LCD_Start
+ 1185              	.LVL124:
+ 605:main.c        **** 
+ 606:main.c        ****     // Cursor to Row 0, Col 0
+ 607:main.c        **** 	LCD_Position( 0, 0 );
+ 1186              		.loc 1 607 0
+ 1187 0008 0020     		movs	r0, #0
+ 1188 000a 0146     		mov	r1, r0
+ 1189 000c FFF7FEFF 		bl	LCD_Position
+ 1190              	.LVL125:
+ 608:main.c        ****     
+ 609:main.c        ****     ccw_flag = 0, cw_flag = 0;
+ 1191              		.loc 1 609 0
+ 1192 0010 204D     		ldr	r5, .L91
+ 1193 0012 0024     		movs	r4, #0
+ 1194 0014 AC85     		strh	r4, [r5, #44]	@ movhi
+ 1195 0016 EC85     		strh	r4, [r5, #46]	@ movhi
+ 610:main.c        ****     //hall_sensor_flag = 0;
+ 611:main.c        ****     
+ 612:main.c        ****     /* Place your initialization/startup code here (e.g. MyInst_Start()) */
+ 613:main.c        ****     //right sensor
+ 614:main.c        ****     isr_1_StartEx(RISING_EDGE_1);
+ 1196              		.loc 1 614 0
+ 1197 0018 1F48     		ldr	r0, .L91+4
+ 1198 001a FFF7FEFF 		bl	isr_1_StartEx
+ 1199              	.LVL126:
+ 615:main.c        ****     isr_3_StartEx(FALLING_EDGE_1);
+ 1200              		.loc 1 615 0
+ 1201 001e 1F48     		ldr	r0, .L91+8
+ 1202 0020 FFF7FEFF 		bl	isr_3_StartEx
+ 1203              	.LVL127:
+ 616:main.c        **** 
+ 617:main.c        ****     //left sensor
+ 618:main.c        ****     isr_2_StartEx(RISING_EDGE_2);
+ 1204              		.loc 1 618 0
+ 1205 0024 1E48     		ldr	r0, .L91+12
+ 1206 0026 FFF7FEFF 		bl	isr_2_StartEx
+ 1207              	.LVL128:
+ 619:main.c        ****     isr_4_StartEx(FALLING_EDGE_2);
+ 1208              		.loc 1 619 0
+ 1209 002a 1E48     		ldr	r0, .L91+16
+ 1210 002c FFF7FEFF 		bl	isr_4_StartEx
+ 1211              	.LVL129:
+ 620:main.c        **** 
+ 621:main.c        ****     //hall sensor
+ 622:main.c        ****     isr_5_StartEx(HALL_SENSOR);
+ 1212              		.loc 1 622 0
+ 1213 0030 1D48     		ldr	r0, .L91+20
+ 1214 0032 FFF7FEFF 		bl	isr_5_StartEx
+ 1215              	.LVL130:
+ 623:main.c        ****     hall_sensor_flag = 0;
+ 1216              		.loc 1 623 0
+ 1217 0036 2C70     		strb	r4, [r5]
+ 624:main.c        ****     
+ 625:main.c        ****     /* Run stepper motor orientation test once */
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 35
+
+
+ 626:main.c        ****     for (i = 0; i < 20; i++)
+ 1218              		.loc 1 626 0
+ 1219 0038 1C4B     		ldr	r3, .L91+24
+ 1220 003a 1C60     		str	r4, [r3]
+ 1221 003c 0CE0     		b	.L81
+ 1222              	.L84:
+ 627:main.c        ****     {
+ 628:main.c        ****         if (hall_sensor_flag == 0)
+ 1223              		.loc 1 628 0
+ 1224 003e 154B     		ldr	r3, .L91
+ 1225 0040 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 1226 0042 33B9     		cbnz	r3, .L82
+ 629:main.c        ****         {
+ 630:main.c        ****             clockwise();
+ 1227              		.loc 1 630 0
+ 1228 0044 FFF7FEFF 		bl	clockwise
+ 1229              	.LVL131:
+ 626:main.c        ****     {
+ 1230              		.loc 1 626 0
+ 1231 0048 184A     		ldr	r2, .L91+24
+ 1232 004a 1368     		ldr	r3, [r2]
+ 1233 004c 0133     		adds	r3, r3, #1
+ 1234 004e 1360     		str	r3, [r2]
+ 1235 0050 02E0     		b	.L81
+ 1236              	.L82:
+ 631:main.c        ****         }
+ 632:main.c        ****         
+ 633:main.c        ****         else
+ 634:main.c        ****         {
+ 635:main.c        ****             //for (i = 0; i < 2; i++)
+ 636:main.c        ****             clockwise();
+ 1237              		.loc 1 636 0
+ 1238 0052 FFF7FEFF 		bl	clockwise
+ 1239              	.LVL132:
+ 637:main.c        ****             
+ 638:main.c        ****             //stopMotor();
+ 639:main.c        ****             break;
+ 1240              		.loc 1 639 0
+ 1241 0056 03E0     		b	.L83
+ 1242              	.L81:
+ 626:main.c        ****     {
+ 1243              		.loc 1 626 0 discriminator 1
+ 1244 0058 144B     		ldr	r3, .L91+24
+ 1245 005a 1B68     		ldr	r3, [r3]
+ 1246 005c 132B     		cmp	r3, #19
+ 1247 005e EEDD     		ble	.L84
+ 1248              	.L83:
+ 640:main.c        ****         }
+ 641:main.c        ****     }
+ 642:main.c        **** 
+ 643:main.c        ****     /* Initial sweep of clockwise doesn't detect the hall sensor, so back */
+ 644:main.c        ****     if (i == 20)
+ 1249              		.loc 1 644 0
+ 1250 0060 124B     		ldr	r3, .L91+24
+ 1251 0062 1B68     		ldr	r3, [r3]
+ 1252 0064 142B     		cmp	r3, #20
+ 1253 0066 14D1     		bne	.L85
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 36
+
+
+ 645:main.c        ****     {
+ 646:main.c        ****         for (i = 0; i < 50; i++)
+ 1254              		.loc 1 646 0
+ 1255 0068 0022     		movs	r2, #0
+ 1256 006a 104B     		ldr	r3, .L91+24
+ 1257 006c 1A60     		str	r2, [r3]
+ 1258 006e 0CE0     		b	.L86
+ 1259              	.L89:
+ 647:main.c        ****         {
+ 648:main.c        ****             if (!hall_sensor_flag)
+ 1260              		.loc 1 648 0
+ 1261 0070 084B     		ldr	r3, .L91
+ 1262 0072 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 1263 0074 33B9     		cbnz	r3, .L87
+ 649:main.c        ****             {
+ 650:main.c        ****                 counter_clockwise();
+ 1264              		.loc 1 650 0
+ 1265 0076 FFF7FEFF 		bl	counter_clockwise
+ 1266              	.LVL133:
+ 646:main.c        ****         {
+ 1267              		.loc 1 646 0
+ 1268 007a 0C4A     		ldr	r2, .L91+24
+ 1269 007c 1368     		ldr	r3, [r2]
+ 1270 007e 0133     		adds	r3, r3, #1
+ 1271 0080 1360     		str	r3, [r2]
+ 1272 0082 02E0     		b	.L86
+ 1273              	.L87:
+ 651:main.c        ****             }
+ 652:main.c        ****             
+ 653:main.c        ****             else
+ 654:main.c        ****             {
+ 655:main.c        ****                 counter_clockwise();
+ 1274              		.loc 1 655 0
+ 1275 0084 FFF7FEFF 		bl	counter_clockwise
+ 1276              	.LVL134:
+ 656:main.c        ****                 
+ 657:main.c        ****                 //stopMotor();
+ 658:main.c        ****                 break;
+ 1277              		.loc 1 658 0
+ 1278 0088 03E0     		b	.L88
+ 1279              	.L86:
+ 646:main.c        ****         {
+ 1280              		.loc 1 646 0 discriminator 1
+ 1281 008a 084B     		ldr	r3, .L91+24
+ 1282 008c 1B68     		ldr	r3, [r3]
+ 1283 008e 312B     		cmp	r3, #49
+ 1284 0090 EEDD     		ble	.L89
+ 1285              	.L88:
+ 1286              	.L85:
+ 659:main.c        ****             }
+ 660:main.c        ****         }
+ 661:main.c        ****         
+ 662:main.c        ****         hall_sensor_flag = 0;
+ 663:main.c        ****     }
+ 664:main.c        ****     
+ 665:main.c        ****     for(;;)
+ 666:main.c        ****     {
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 37
+
+
+ 667:main.c        ****         /* Place your application code here. */
+ 668:main.c        ****         //counter_clockwise();
+ 669:main.c        ****         //clockwise();
+ 670:main.c        ****         //counter_clockwise_1();
+ 671:main.c        ****         
+ 672:main.c        **** //        if (hall_sensor_flag)
+ 673:main.c        **** //        {
+ 674:main.c        **** //            Pin_2_1_Write(1);
+ 675:main.c        **** //            CyDelay(500);
+ 676:main.c        **** //            Pin_2_1_Write(0);
+ 677:main.c        **** //            CyDelay(500);
+ 678:main.c        **** //            hall_sensor_flag = 0;
+ 679:main.c        **** //        }
+ 680:main.c        ****         
+ 681:main.c        ****     }
+ 1287              		.loc 1 681 0 discriminator 1
+ 1288 0092 FEE7     		b	.L85
+ 1289              	.L92:
+ 1290              		.align	2
+ 1291              	.L91:
+ 1292 0094 00000000 		.word	.LANCHOR0
+ 1293 0098 00000000 		.word	RISING_EDGE_1
+ 1294 009c 00000000 		.word	FALLING_EDGE_1
+ 1295 00a0 00000000 		.word	RISING_EDGE_2
+ 1296 00a4 00000000 		.word	FALLING_EDGE_2
+ 1297 00a8 00000000 		.word	HALL_SENSOR
+ 1298 00ac 00000000 		.word	i
+ 1299              		.cfi_endproc
+ 1300              	.LFE82:
+ 1301              		.size	main, .-main
+ 1302              		.comm	lcd_string,9,4
+ 1303              		.global	pitch_limit
+ 1304              		.global	hall_sensor_flag
+ 1305              		.comm	prev_distance2,4,4
+ 1306              		.global	prev_distance
+ 1307              		.comm	i,4,4
+ 1308              		.global	no_of_steps
+ 1309              		.global	cw_flag
+ 1310              		.global	ccw_flag
+ 1311              		.global	hall_count
+ 1312              		.comm	difference,4,4
+ 1313              		.comm	sum,4,4
+ 1314              		.global	delay
+ 1315              		.comm	distance2,4,4
+ 1316              		.global	distance
+ 1317              		.global	sensor_delay_count
+ 1318              		.comm	count2,4,4
+ 1319              		.global	count
+ 1320              		.global	pitch_no_of_steps
+ 1321              		.global	pitch_move_steps
+ 1322              		.global	move_steps
+ 1323              		.global	prev_pitch_index
+ 1324              		.global	prev_yaw_index
+ 1325              		.global	pitch_index
+ 1326              		.global	pitch_table
+ 1327              		.global	yaw_index
+ 1328              		.global	yaw_table
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 38
+
+
+ 1329              		.comm	code_trace_array,40,4
+ 1330              		.comm	bad_event_array,40,4
+ 1331              		.comm	percent_good_counts,4,4
+ 1332              		.comm	bad_dx_count,4,4
+ 1333              		.data
+ 1334              		.align	2
+ 1335              		.set	.LANCHOR1,. + 0
+ 1336              		.type	delay, %object
+ 1337              		.size	delay, 2
+ 1338              	delay:
+ 1339 0000 204E     		.short	20000
+ 1340 0002 0000     		.space	2
+ 1341              		.type	yaw_table, %object
+ 1342              		.size	yaw_table, 44
+ 1343              	yaw_table:
+ 1344 0004 F6FFFFFF 		.word	-10
+ 1345 0008 F8FFFFFF 		.word	-8
+ 1346 000c FAFFFFFF 		.word	-6
+ 1347 0010 FCFFFFFF 		.word	-4
+ 1348 0014 FEFFFFFF 		.word	-2
+ 1349 0018 00000000 		.word	0
+ 1350 001c 02000000 		.word	2
+ 1351 0020 04000000 		.word	4
+ 1352 0024 06000000 		.word	6
+ 1353 0028 08000000 		.word	8
+ 1354 002c 0A000000 		.word	10
+ 1355              		.type	no_of_steps, %object
+ 1356              		.size	no_of_steps, 2
+ 1357              	no_of_steps:
+ 1358 0030 0A00     		.short	10
+ 1359 0032 0000     		.space	2
+ 1360              		.type	prev_yaw_index, %object
+ 1361              		.size	prev_yaw_index, 4
+ 1362              	prev_yaw_index:
+ 1363 0034 05000000 		.word	5
+ 1364              		.type	pitch_table, %object
+ 1365              		.size	pitch_table, 44
+ 1366              	pitch_table:
+ 1367 0038 05000000 		.word	5
+ 1368 003c 04000000 		.word	4
+ 1369 0040 03000000 		.word	3
+ 1370 0044 02000000 		.word	2
+ 1371 0048 01000000 		.word	1
+ 1372 004c 00000000 		.word	0
+ 1373 0050 01000000 		.word	1
+ 1374 0054 02000000 		.word	2
+ 1375 0058 03000000 		.word	3
+ 1376 005c 04000000 		.word	4
+ 1377 0060 05000000 		.word	5
+ 1378              		.type	prev_pitch_index, %object
+ 1379              		.size	prev_pitch_index, 4
+ 1380              	prev_pitch_index:
+ 1381 0064 05000000 		.word	5
+ 1382              		.type	pitch_limit, %object
+ 1383              		.size	pitch_limit, 1
+ 1384              	pitch_limit:
+ 1385 0068 0A       		.byte	10
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 39
+
+
+ 1386 0069 000000   		.section	.rodata.str1.4,"aMS",%progbits,1
+ 1387              		.align	2
+ 1388              	.LC0:
+ 1389 0000 20202020 		.ascii	"    \000"
+ 1389      00
+ 1390 0005 000000   		.space	3
+ 1391              	.LC1:
+ 1392 0008 20202020 		.ascii	"       \000"
+ 1392      20202000 
+ 1393              	.LC2:
+ 1394 0010 443A2020 		.ascii	"D:    \000"
+ 1394      202000
+ 1395 0017 00       		.bss
+ 1396              		.align	2
+ 1397              		.set	.LANCHOR0,. + 0
+ 1398              		.type	hall_sensor_flag, %object
+ 1399              		.size	hall_sensor_flag, 1
+ 1400              	hall_sensor_flag:
+ 1401 0000 00       		.space	1
+ 1402 0001 000000   		.space	3
+ 1403              		.type	hall_count, %object
+ 1404              		.size	hall_count, 4
+ 1405              	hall_count:
+ 1406 0004 00000000 		.space	4
+ 1407              		.type	count, %object
+ 1408              		.size	count, 4
+ 1409              	count:
+ 1410 0008 00000000 		.space	4
+ 1411              		.type	distance, %object
+ 1412              		.size	distance, 4
+ 1413              	distance:
+ 1414 000c 00000000 		.space	4
+ 1415              		.type	prev_distance, %object
+ 1416              		.size	prev_distance, 4
+ 1417              	prev_distance:
+ 1418 0010 00000000 		.space	4
+ 1419              		.type	sensor_delay_count, %object
+ 1420              		.size	sensor_delay_count, 4
+ 1421              	sensor_delay_count:
+ 1422 0014 00000000 		.space	4
+ 1423              		.type	yaw_index, %object
+ 1424              		.size	yaw_index, 4
+ 1425              	yaw_index:
+ 1426 0018 00000000 		.space	4
+ 1427              		.type	move_steps, %object
+ 1428              		.size	move_steps, 4
+ 1429              	move_steps:
+ 1430 001c 00000000 		.space	4
+ 1431              		.type	pitch_index, %object
+ 1432              		.size	pitch_index, 4
+ 1433              	pitch_index:
+ 1434 0020 00000000 		.space	4
+ 1435              		.type	pitch_no_of_steps, %object
+ 1436              		.size	pitch_no_of_steps, 4
+ 1437              	pitch_no_of_steps:
+ 1438 0024 00000000 		.space	4
+ 1439              		.type	pitch_move_steps, %object
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 40
+
+
+ 1440              		.size	pitch_move_steps, 4
+ 1441              	pitch_move_steps:
+ 1442 0028 00000000 		.space	4
+ 1443              		.type	ccw_flag, %object
+ 1444              		.size	ccw_flag, 2
+ 1445              	ccw_flag:
+ 1446 002c 0000     		.space	2
+ 1447              		.type	cw_flag, %object
+ 1448              		.size	cw_flag, 2
+ 1449              	cw_flag:
+ 1450 002e 0000     		.space	2
+ 1451              		.text
+ 1452              	.Letext0:
+ 1453              		.file 2 "d:\\program files (x86)\\cypress\\psoc creator\\4.0\\psoc creator\\import\\gnu\\arm\\4.9.
+ 1454              		.file 3 "d:\\program files (x86)\\cypress\\psoc creator\\4.0\\psoc creator\\import\\gnu\\arm\\4.9.
+ 1455              		.file 4 "Generated_Source\\PSoC5/cytypes.h"
+ 1456              		.file 5 "Generated_Source\\PSoC5/core_cm3.h"
+ 1457              		.file 6 "Generated_Source\\PSoC5/Counter_1.h"
+ 1458              		.file 7 "Generated_Source\\PSoC5/LCD.h"
+ 1459              		.file 8 "Generated_Source\\PSoC5/Counter_2.h"
+ 1460              		.file 9 "Generated_Source\\PSoC5/Pin_A1.h"
+ 1461              		.file 10 "Generated_Source\\PSoC5/Pin_A2.h"
+ 1462              		.file 11 "Generated_Source\\PSoC5/Pin_B1.h"
+ 1463              		.file 12 "Generated_Source\\PSoC5/Pin_B2.h"
+ 1464              		.file 13 "Generated_Source\\PSoC5/Pin_A1_1.h"
+ 1465              		.file 14 "Generated_Source\\PSoC5/Pin_A2_1.h"
+ 1466              		.file 15 "Generated_Source\\PSoC5/Pin_B1_1.h"
+ 1467              		.file 16 "Generated_Source\\PSoC5/Pin_B2_1.h"
+ 1468              		.file 17 "Generated_Source\\PSoC5/CyLib.h"
+ 1469              		.file 18 "Generated_Source\\PSoC5/isr_1.h"
+ 1470              		.file 19 "Generated_Source\\PSoC5/isr_3.h"
+ 1471              		.file 20 "Generated_Source\\PSoC5/isr_2.h"
+ 1472              		.file 21 "Generated_Source\\PSoC5/isr_4.h"
+ 1473              		.file 22 "Generated_Source\\PSoC5/isr_5.h"
+ 1474              		.section	.debug_info,"",%progbits
+ 1475              	.Ldebug_info0:
+ 1476 0000 520D0000 		.4byte	0xd52
+ 1477 0004 0400     		.2byte	0x4
+ 1478 0006 00000000 		.4byte	.Ldebug_abbrev0
+ 1479 000a 04       		.byte	0x4
+ 1480 000b 01       		.uleb128 0x1
+ 1481 000c AC030000 		.4byte	.LASF97
+ 1482 0010 01       		.byte	0x1
+ 1483 0011 9A040000 		.4byte	.LASF98
+ 1484 0015 0A000000 		.4byte	.LASF99
+ 1485 0019 00000000 		.4byte	.Ldebug_ranges0+0
+ 1486 001d 00000000 		.4byte	0
+ 1487 0021 00000000 		.4byte	.Ldebug_line0
+ 1488 0025 02       		.uleb128 0x2
+ 1489 0026 01       		.byte	0x1
+ 1490 0027 06       		.byte	0x6
+ 1491 0028 9A000000 		.4byte	.LASF0
+ 1492 002c 02       		.uleb128 0x2
+ 1493 002d 01       		.byte	0x1
+ 1494 002e 08       		.byte	0x8
+ 1495 002f 8F020000 		.4byte	.LASF1
+ 1496 0033 02       		.uleb128 0x2
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 41
+
+
+ 1497 0034 02       		.byte	0x2
+ 1498 0035 05       		.byte	0x5
+ 1499 0036 B6000000 		.4byte	.LASF2
+ 1500 003a 02       		.uleb128 0x2
+ 1501 003b 02       		.byte	0x2
+ 1502 003c 07       		.byte	0x7
+ 1503 003d 63030000 		.4byte	.LASF3
+ 1504 0041 03       		.uleb128 0x3
+ 1505 0042 14050000 		.4byte	.LASF9
+ 1506 0046 02       		.byte	0x2
+ 1507 0047 3F       		.byte	0x3f
+ 1508 0048 4C000000 		.4byte	0x4c
+ 1509 004c 02       		.uleb128 0x2
+ 1510 004d 04       		.byte	0x4
+ 1511 004e 05       		.byte	0x5
+ 1512 004f EB010000 		.4byte	.LASF4
+ 1513 0053 02       		.uleb128 0x2
+ 1514 0054 04       		.byte	0x4
+ 1515 0055 07       		.byte	0x7
+ 1516 0056 A1040000 		.4byte	.LASF5
+ 1517 005a 02       		.uleb128 0x2
+ 1518 005b 08       		.byte	0x8
+ 1519 005c 05       		.byte	0x5
+ 1520 005d C5010000 		.4byte	.LASF6
+ 1521 0061 02       		.uleb128 0x2
+ 1522 0062 08       		.byte	0x8
+ 1523 0063 07       		.byte	0x7
+ 1524 0064 DE020000 		.4byte	.LASF7
+ 1525 0068 04       		.uleb128 0x4
+ 1526 0069 04       		.byte	0x4
+ 1527 006a 05       		.byte	0x5
+ 1528 006b 696E7400 		.ascii	"int\000"
+ 1529 006f 02       		.uleb128 0x2
+ 1530 0070 04       		.byte	0x4
+ 1531 0071 07       		.byte	0x7
+ 1532 0072 0D030000 		.4byte	.LASF8
+ 1533 0076 03       		.uleb128 0x3
+ 1534 0077 4E040000 		.4byte	.LASF10
+ 1535 007b 03       		.byte	0x3
+ 1536 007c 2C       		.byte	0x2c
+ 1537 007d 41000000 		.4byte	0x41
+ 1538 0081 05       		.uleb128 0x5
+ 1539 0082 59010000 		.4byte	.LASF11
+ 1540 0086 04       		.byte	0x4
+ 1541 0087 9201     		.2byte	0x192
+ 1542 0089 2C000000 		.4byte	0x2c
+ 1543 008d 05       		.uleb128 0x5
+ 1544 008e 4C010000 		.4byte	.LASF12
+ 1545 0092 04       		.byte	0x4
+ 1546 0093 9301     		.2byte	0x193
+ 1547 0095 3A000000 		.4byte	0x3a
+ 1548 0099 05       		.uleb128 0x5
+ 1549 009a 93040000 		.4byte	.LASF13
+ 1550 009e 04       		.byte	0x4
+ 1551 009f 9401     		.2byte	0x194
+ 1552 00a1 53000000 		.4byte	0x53
+ 1553 00a5 05       		.uleb128 0x5
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 42
+
+
+ 1554 00a6 53010000 		.4byte	.LASF14
+ 1555 00aa 04       		.byte	0x4
+ 1556 00ab 9601     		.2byte	0x196
+ 1557 00ad 33000000 		.4byte	0x33
+ 1558 00b1 05       		.uleb128 0x5
+ 1559 00b2 B3040000 		.4byte	.LASF15
+ 1560 00b6 04       		.byte	0x4
+ 1561 00b7 9701     		.2byte	0x197
+ 1562 00b9 4C000000 		.4byte	0x4c
+ 1563 00bd 02       		.uleb128 0x2
+ 1564 00be 04       		.byte	0x4
+ 1565 00bf 04       		.byte	0x4
+ 1566 00c0 AB010000 		.4byte	.LASF16
+ 1567 00c4 02       		.uleb128 0x2
+ 1568 00c5 08       		.byte	0x8
+ 1569 00c6 04       		.byte	0x4
+ 1570 00c7 B9040000 		.4byte	.LASF17
+ 1571 00cb 05       		.uleb128 0x5
+ 1572 00cc DE000000 		.4byte	.LASF18
+ 1573 00d0 04       		.byte	0x4
+ 1574 00d1 A301     		.2byte	0x1a3
+ 1575 00d3 D7000000 		.4byte	0xd7
+ 1576 00d7 02       		.uleb128 0x2
+ 1577 00d8 01       		.byte	0x1
+ 1578 00d9 08       		.byte	0x8
+ 1579 00da 9D030000 		.4byte	.LASF19
+ 1580 00de 05       		.uleb128 0x5
+ 1581 00df C6020000 		.4byte	.LASF20
+ 1582 00e3 04       		.byte	0x4
+ 1583 00e4 4E02     		.2byte	0x24e
+ 1584 00e6 EA000000 		.4byte	0xea
+ 1585 00ea 06       		.uleb128 0x6
+ 1586 00eb 04       		.byte	0x4
+ 1587 00ec F0000000 		.4byte	0xf0
+ 1588 00f0 07       		.uleb128 0x7
+ 1589 00f1 02       		.uleb128 0x2
+ 1590 00f2 04       		.byte	0x4
+ 1591 00f3 07       		.byte	0x7
+ 1592 00f4 C0000000 		.4byte	.LASF21
+ 1593 00f8 08       		.uleb128 0x8
+ 1594 00f9 28050000 		.4byte	.LASF100
+ 1595 00fd 01       		.byte	0x1
+ 1596 00fe D3       		.byte	0xd3
+ 1597 00ff 00000000 		.4byte	.LFB77
+ 1598 0103 14000000 		.4byte	.LFE77-.LFB77
+ 1599 0107 01       		.uleb128 0x1
+ 1600 0108 9C       		.byte	0x9c
+ 1601 0109 09       		.uleb128 0x9
+ 1602 010a 91050000 		.4byte	.LASF22
+ 1603 010e 01       		.byte	0x1
+ 1604 010f DB       		.byte	0xdb
+ 1605 0110 00000000 		.4byte	.LFB78
+ 1606 0114 08000000 		.4byte	.LFE78-.LFB78
+ 1607 0118 01       		.uleb128 0x1
+ 1608 0119 9C       		.byte	0x9c
+ 1609 011a 28010000 		.4byte	0x128
+ 1610 011e 0A       		.uleb128 0xa
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 43
+
+
+ 1611 011f 06000000 		.4byte	.LVL0
+ 1612 0123 AB0B0000 		.4byte	0xbab
+ 1613 0127 00       		.byte	0
+ 1614 0128 0B       		.uleb128 0xb
+ 1615 0129 73050000 		.4byte	.LASF23
+ 1616 012d 01       		.byte	0x1
+ 1617 012e E3       		.byte	0xe3
+ 1618 012f 00000000 		.4byte	.LFB79
+ 1619 0133 8C000000 		.4byte	.LFE79-.LFB79
+ 1620 0137 01       		.uleb128 0x1
+ 1621 0138 9C       		.byte	0x9c
+ 1622 0139 B3010000 		.4byte	0x1b3
+ 1623 013d 0A       		.uleb128 0xa
+ 1624 013e 06000000 		.4byte	.LVL1
+ 1625 0142 B20B0000 		.4byte	0xbb2
+ 1626 0146 0A       		.uleb128 0xa
+ 1627 0147 0A000000 		.4byte	.LVL2
+ 1628 014b B90B0000 		.4byte	0xbb9
+ 1629 014f 0C       		.uleb128 0xc
+ 1630 0150 14000000 		.4byte	.LVL3
+ 1631 0154 C40B0000 		.4byte	0xbc4
+ 1632 0158 62010000 		.4byte	0x162
+ 1633 015c 0D       		.uleb128 0xd
+ 1634 015d 01       		.uleb128 0x1
+ 1635 015e 50       		.byte	0x50
+ 1636 015f 01       		.uleb128 0x1
+ 1637 0160 30       		.byte	0x30
+ 1638 0161 00       		.byte	0
+ 1639 0162 0C       		.uleb128 0xc
+ 1640 0163 56000000 		.4byte	.LVL9
+ 1641 0167 D50B0000 		.4byte	0xbd5
+ 1642 016b 7A010000 		.4byte	0x17a
+ 1643 016f 0D       		.uleb128 0xd
+ 1644 0170 01       		.uleb128 0x1
+ 1645 0171 51       		.byte	0x51
+ 1646 0172 01       		.uleb128 0x1
+ 1647 0173 31       		.byte	0x31
+ 1648 0174 0D       		.uleb128 0xd
+ 1649 0175 01       		.uleb128 0x1
+ 1650 0176 50       		.byte	0x50
+ 1651 0177 01       		.uleb128 0x1
+ 1652 0178 30       		.byte	0x30
+ 1653 0179 00       		.byte	0
+ 1654 017a 0C       		.uleb128 0xc
+ 1655 017b 5C000000 		.4byte	.LVL10
+ 1656 017f EB0B0000 		.4byte	0xbeb
+ 1657 0183 91010000 		.4byte	0x191
+ 1658 0187 0D       		.uleb128 0xd
+ 1659 0188 01       		.uleb128 0x1
+ 1660 0189 50       		.byte	0x50
+ 1661 018a 05       		.uleb128 0x5
+ 1662 018b 03       		.byte	0x3
+ 1663 018c 00000000 		.4byte	.LC0
+ 1664 0190 00       		.byte	0
+ 1665 0191 0C       		.uleb128 0xc
+ 1666 0192 64000000 		.4byte	.LVL11
+ 1667 0196 D50B0000 		.4byte	0xbd5
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 44
+
+
+ 1668 019a A9010000 		.4byte	0x1a9
+ 1669 019e 0D       		.uleb128 0xd
+ 1670 019f 01       		.uleb128 0x1
+ 1671 01a0 51       		.byte	0x51
+ 1672 01a1 01       		.uleb128 0x1
+ 1673 01a2 31       		.byte	0x31
+ 1674 01a3 0D       		.uleb128 0xd
+ 1675 01a4 01       		.uleb128 0x1
+ 1676 01a5 50       		.byte	0x50
+ 1677 01a6 01       		.uleb128 0x1
+ 1678 01a7 30       		.byte	0x30
+ 1679 01a8 00       		.byte	0
+ 1680 01a9 0A       		.uleb128 0xa
+ 1681 01aa 70000000 		.4byte	.LVL13
+ 1682 01ae 070C0000 		.4byte	0xc07
+ 1683 01b2 00       		.byte	0
+ 1684 01b3 0E       		.uleb128 0xe
+ 1685 01b4 9F050000 		.4byte	.LASF24
+ 1686 01b8 01       		.byte	0x1
+ 1687 01b9 0701     		.2byte	0x107
+ 1688 01bb 00000000 		.4byte	.LFB80
+ 1689 01bf 08000000 		.4byte	.LFE80-.LFB80
+ 1690 01c3 01       		.uleb128 0x1
+ 1691 01c4 9C       		.byte	0x9c
+ 1692 01c5 D3010000 		.4byte	0x1d3
+ 1693 01c9 0A       		.uleb128 0xa
+ 1694 01ca 06000000 		.4byte	.LVL14
+ 1695 01ce 180C0000 		.4byte	0xc18
+ 1696 01d2 00       		.byte	0
+ 1697 01d3 0F       		.uleb128 0xf
+ 1698 01d4 D3010000 		.4byte	.LASF25
+ 1699 01d8 01       		.byte	0x1
+ 1700 01d9 4B       		.byte	0x4b
+ 1701 01da 00000000 		.4byte	.LFB63
+ 1702 01de 1C000000 		.4byte	.LFE63-.LFB63
+ 1703 01e2 01       		.uleb128 0x1
+ 1704 01e3 9C       		.byte	0x9c
+ 1705 01e4 31020000 		.4byte	0x231
+ 1706 01e8 0C       		.uleb128 0xc
+ 1707 01e9 08000000 		.4byte	.LVL15
+ 1708 01ed 1F0C0000 		.4byte	0xc1f
+ 1709 01f1 FB010000 		.4byte	0x1fb
+ 1710 01f5 0D       		.uleb128 0xd
+ 1711 01f6 01       		.uleb128 0x1
+ 1712 01f7 50       		.byte	0x50
+ 1713 01f8 01       		.uleb128 0x1
+ 1714 01f9 30       		.byte	0x30
+ 1715 01fa 00       		.byte	0
+ 1716 01fb 0C       		.uleb128 0xc
+ 1717 01fc 0E000000 		.4byte	.LVL16
+ 1718 0200 300C0000 		.4byte	0xc30
+ 1719 0204 0E020000 		.4byte	0x20e
+ 1720 0208 0D       		.uleb128 0xd
+ 1721 0209 01       		.uleb128 0x1
+ 1722 020a 50       		.byte	0x50
+ 1723 020b 01       		.uleb128 0x1
+ 1724 020c 31       		.byte	0x31
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 45
+
+
+ 1725 020d 00       		.byte	0
+ 1726 020e 0C       		.uleb128 0xc
+ 1727 020f 14000000 		.4byte	.LVL17
+ 1728 0213 410C0000 		.4byte	0xc41
+ 1729 0217 21020000 		.4byte	0x221
+ 1730 021b 0D       		.uleb128 0xd
+ 1731 021c 01       		.uleb128 0x1
+ 1732 021d 50       		.byte	0x50
+ 1733 021e 01       		.uleb128 0x1
+ 1734 021f 31       		.byte	0x31
+ 1735 0220 00       		.byte	0
+ 1736 0221 10       		.uleb128 0x10
+ 1737 0222 1A000000 		.4byte	.LVL18
+ 1738 0226 520C0000 		.4byte	0xc52
+ 1739 022a 0D       		.uleb128 0xd
+ 1740 022b 01       		.uleb128 0x1
+ 1741 022c 50       		.byte	0x50
+ 1742 022d 01       		.uleb128 0x1
+ 1743 022e 30       		.byte	0x30
+ 1744 022f 00       		.byte	0
+ 1745 0230 00       		.byte	0
+ 1746 0231 0F       		.uleb128 0xf
+ 1747 0232 D9010000 		.4byte	.LASF26
+ 1748 0236 01       		.byte	0x1
+ 1749 0237 53       		.byte	0x53
+ 1750 0238 00000000 		.4byte	.LFB64
+ 1751 023c 1C000000 		.4byte	.LFE64-.LFB64
+ 1752 0240 01       		.uleb128 0x1
+ 1753 0241 9C       		.byte	0x9c
+ 1754 0242 8F020000 		.4byte	0x28f
+ 1755 0246 0C       		.uleb128 0xc
+ 1756 0247 08000000 		.4byte	.LVL19
+ 1757 024b 1F0C0000 		.4byte	0xc1f
+ 1758 024f 59020000 		.4byte	0x259
+ 1759 0253 0D       		.uleb128 0xd
+ 1760 0254 01       		.uleb128 0x1
+ 1761 0255 50       		.byte	0x50
+ 1762 0256 01       		.uleb128 0x1
+ 1763 0257 30       		.byte	0x30
+ 1764 0258 00       		.byte	0
+ 1765 0259 0C       		.uleb128 0xc
+ 1766 025a 0E000000 		.4byte	.LVL20
+ 1767 025e 300C0000 		.4byte	0xc30
+ 1768 0262 6C020000 		.4byte	0x26c
+ 1769 0266 0D       		.uleb128 0xd
+ 1770 0267 01       		.uleb128 0x1
+ 1771 0268 50       		.byte	0x50
+ 1772 0269 01       		.uleb128 0x1
+ 1773 026a 31       		.byte	0x31
+ 1774 026b 00       		.byte	0
+ 1775 026c 0C       		.uleb128 0xc
+ 1776 026d 14000000 		.4byte	.LVL21
+ 1777 0271 410C0000 		.4byte	0xc41
+ 1778 0275 7F020000 		.4byte	0x27f
+ 1779 0279 0D       		.uleb128 0xd
+ 1780 027a 01       		.uleb128 0x1
+ 1781 027b 50       		.byte	0x50
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 46
+
+
+ 1782 027c 01       		.uleb128 0x1
+ 1783 027d 30       		.byte	0x30
+ 1784 027e 00       		.byte	0
+ 1785 027f 10       		.uleb128 0x10
+ 1786 0280 1A000000 		.4byte	.LVL22
+ 1787 0284 520C0000 		.4byte	0xc52
+ 1788 0288 0D       		.uleb128 0xd
+ 1789 0289 01       		.uleb128 0x1
+ 1790 028a 50       		.byte	0x50
+ 1791 028b 01       		.uleb128 0x1
+ 1792 028c 31       		.byte	0x31
+ 1793 028d 00       		.byte	0
+ 1794 028e 00       		.byte	0
+ 1795 028f 0F       		.uleb128 0xf
+ 1796 0290 DF010000 		.4byte	.LASF27
+ 1797 0294 01       		.byte	0x1
+ 1798 0295 5B       		.byte	0x5b
+ 1799 0296 00000000 		.4byte	.LFB65
+ 1800 029a 1C000000 		.4byte	.LFE65-.LFB65
+ 1801 029e 01       		.uleb128 0x1
+ 1802 029f 9C       		.byte	0x9c
+ 1803 02a0 ED020000 		.4byte	0x2ed
+ 1804 02a4 0C       		.uleb128 0xc
+ 1805 02a5 08000000 		.4byte	.LVL23
+ 1806 02a9 1F0C0000 		.4byte	0xc1f
+ 1807 02ad B7020000 		.4byte	0x2b7
+ 1808 02b1 0D       		.uleb128 0xd
+ 1809 02b2 01       		.uleb128 0x1
+ 1810 02b3 50       		.byte	0x50
+ 1811 02b4 01       		.uleb128 0x1
+ 1812 02b5 31       		.byte	0x31
+ 1813 02b6 00       		.byte	0
+ 1814 02b7 0C       		.uleb128 0xc
+ 1815 02b8 0E000000 		.4byte	.LVL24
+ 1816 02bc 300C0000 		.4byte	0xc30
+ 1817 02c0 CA020000 		.4byte	0x2ca
+ 1818 02c4 0D       		.uleb128 0xd
+ 1819 02c5 01       		.uleb128 0x1
+ 1820 02c6 50       		.byte	0x50
+ 1821 02c7 01       		.uleb128 0x1
+ 1822 02c8 30       		.byte	0x30
+ 1823 02c9 00       		.byte	0
+ 1824 02ca 0C       		.uleb128 0xc
+ 1825 02cb 14000000 		.4byte	.LVL25
+ 1826 02cf 410C0000 		.4byte	0xc41
+ 1827 02d3 DD020000 		.4byte	0x2dd
+ 1828 02d7 0D       		.uleb128 0xd
+ 1829 02d8 01       		.uleb128 0x1
+ 1830 02d9 50       		.byte	0x50
+ 1831 02da 01       		.uleb128 0x1
+ 1832 02db 30       		.byte	0x30
+ 1833 02dc 00       		.byte	0
+ 1834 02dd 10       		.uleb128 0x10
+ 1835 02de 1A000000 		.4byte	.LVL26
+ 1836 02e2 520C0000 		.4byte	0xc52
+ 1837 02e6 0D       		.uleb128 0xd
+ 1838 02e7 01       		.uleb128 0x1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 47
+
+
+ 1839 02e8 50       		.byte	0x50
+ 1840 02e9 01       		.uleb128 0x1
+ 1841 02ea 31       		.byte	0x31
+ 1842 02eb 00       		.byte	0
+ 1843 02ec 00       		.byte	0
+ 1844 02ed 0F       		.uleb128 0xf
+ 1845 02ee E5010000 		.4byte	.LASF28
+ 1846 02f2 01       		.byte	0x1
+ 1847 02f3 62       		.byte	0x62
+ 1848 02f4 00000000 		.4byte	.LFB66
+ 1849 02f8 1C000000 		.4byte	.LFE66-.LFB66
+ 1850 02fc 01       		.uleb128 0x1
+ 1851 02fd 9C       		.byte	0x9c
+ 1852 02fe 4B030000 		.4byte	0x34b
+ 1853 0302 0C       		.uleb128 0xc
+ 1854 0303 08000000 		.4byte	.LVL27
+ 1855 0307 1F0C0000 		.4byte	0xc1f
+ 1856 030b 15030000 		.4byte	0x315
+ 1857 030f 0D       		.uleb128 0xd
+ 1858 0310 01       		.uleb128 0x1
+ 1859 0311 50       		.byte	0x50
+ 1860 0312 01       		.uleb128 0x1
+ 1861 0313 31       		.byte	0x31
+ 1862 0314 00       		.byte	0
+ 1863 0315 0C       		.uleb128 0xc
+ 1864 0316 0E000000 		.4byte	.LVL28
+ 1865 031a 300C0000 		.4byte	0xc30
+ 1866 031e 28030000 		.4byte	0x328
+ 1867 0322 0D       		.uleb128 0xd
+ 1868 0323 01       		.uleb128 0x1
+ 1869 0324 50       		.byte	0x50
+ 1870 0325 01       		.uleb128 0x1
+ 1871 0326 30       		.byte	0x30
+ 1872 0327 00       		.byte	0
+ 1873 0328 0C       		.uleb128 0xc
+ 1874 0329 14000000 		.4byte	.LVL29
+ 1875 032d 410C0000 		.4byte	0xc41
+ 1876 0331 3B030000 		.4byte	0x33b
+ 1877 0335 0D       		.uleb128 0xd
+ 1878 0336 01       		.uleb128 0x1
+ 1879 0337 50       		.byte	0x50
+ 1880 0338 01       		.uleb128 0x1
+ 1881 0339 31       		.byte	0x31
+ 1882 033a 00       		.byte	0
+ 1883 033b 10       		.uleb128 0x10
+ 1884 033c 1A000000 		.4byte	.LVL30
+ 1885 0340 520C0000 		.4byte	0xc52
+ 1886 0344 0D       		.uleb128 0xd
+ 1887 0345 01       		.uleb128 0x1
+ 1888 0346 50       		.byte	0x50
+ 1889 0347 01       		.uleb128 0x1
+ 1890 0348 30       		.byte	0x30
+ 1891 0349 00       		.byte	0
+ 1892 034a 00       		.byte	0
+ 1893 034b 0F       		.uleb128 0xf
+ 1894 034c F5020000 		.4byte	.LASF29
+ 1895 0350 01       		.byte	0x1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 48
+
+
+ 1896 0351 6B       		.byte	0x6b
+ 1897 0352 00000000 		.4byte	.LFB67
+ 1898 0356 1C000000 		.4byte	.LFE67-.LFB67
+ 1899 035a 01       		.uleb128 0x1
+ 1900 035b 9C       		.byte	0x9c
+ 1901 035c A9030000 		.4byte	0x3a9
+ 1902 0360 0C       		.uleb128 0xc
+ 1903 0361 08000000 		.4byte	.LVL31
+ 1904 0365 630C0000 		.4byte	0xc63
+ 1905 0369 73030000 		.4byte	0x373
+ 1906 036d 0D       		.uleb128 0xd
+ 1907 036e 01       		.uleb128 0x1
+ 1908 036f 50       		.byte	0x50
+ 1909 0370 01       		.uleb128 0x1
+ 1910 0371 30       		.byte	0x30
+ 1911 0372 00       		.byte	0
+ 1912 0373 0C       		.uleb128 0xc
+ 1913 0374 0E000000 		.4byte	.LVL32
+ 1914 0378 740C0000 		.4byte	0xc74
+ 1915 037c 86030000 		.4byte	0x386
+ 1916 0380 0D       		.uleb128 0xd
+ 1917 0381 01       		.uleb128 0x1
+ 1918 0382 50       		.byte	0x50
+ 1919 0383 01       		.uleb128 0x1
+ 1920 0384 31       		.byte	0x31
+ 1921 0385 00       		.byte	0
+ 1922 0386 0C       		.uleb128 0xc
+ 1923 0387 14000000 		.4byte	.LVL33
+ 1924 038b 850C0000 		.4byte	0xc85
+ 1925 038f 99030000 		.4byte	0x399
+ 1926 0393 0D       		.uleb128 0xd
+ 1927 0394 01       		.uleb128 0x1
+ 1928 0395 50       		.byte	0x50
+ 1929 0396 01       		.uleb128 0x1
+ 1930 0397 31       		.byte	0x31
+ 1931 0398 00       		.byte	0
+ 1932 0399 10       		.uleb128 0x10
+ 1933 039a 1A000000 		.4byte	.LVL34
+ 1934 039e 960C0000 		.4byte	0xc96
+ 1935 03a2 0D       		.uleb128 0xd
+ 1936 03a3 01       		.uleb128 0x1
+ 1937 03a4 50       		.byte	0x50
+ 1938 03a5 01       		.uleb128 0x1
+ 1939 03a6 30       		.byte	0x30
+ 1940 03a7 00       		.byte	0
+ 1941 03a8 00       		.byte	0
+ 1942 03a9 0F       		.uleb128 0xf
+ 1943 03aa 0C050000 		.4byte	.LASF30
+ 1944 03ae 01       		.byte	0x1
+ 1945 03af 73       		.byte	0x73
+ 1946 03b0 00000000 		.4byte	.LFB68
+ 1947 03b4 1C000000 		.4byte	.LFE68-.LFB68
+ 1948 03b8 01       		.uleb128 0x1
+ 1949 03b9 9C       		.byte	0x9c
+ 1950 03ba 07040000 		.4byte	0x407
+ 1951 03be 0C       		.uleb128 0xc
+ 1952 03bf 08000000 		.4byte	.LVL35
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 49
+
+
+ 1953 03c3 630C0000 		.4byte	0xc63
+ 1954 03c7 D1030000 		.4byte	0x3d1
+ 1955 03cb 0D       		.uleb128 0xd
+ 1956 03cc 01       		.uleb128 0x1
+ 1957 03cd 50       		.byte	0x50
+ 1958 03ce 01       		.uleb128 0x1
+ 1959 03cf 30       		.byte	0x30
+ 1960 03d0 00       		.byte	0
+ 1961 03d1 0C       		.uleb128 0xc
+ 1962 03d2 0E000000 		.4byte	.LVL36
+ 1963 03d6 740C0000 		.4byte	0xc74
+ 1964 03da E4030000 		.4byte	0x3e4
+ 1965 03de 0D       		.uleb128 0xd
+ 1966 03df 01       		.uleb128 0x1
+ 1967 03e0 50       		.byte	0x50
+ 1968 03e1 01       		.uleb128 0x1
+ 1969 03e2 31       		.byte	0x31
+ 1970 03e3 00       		.byte	0
+ 1971 03e4 0C       		.uleb128 0xc
+ 1972 03e5 14000000 		.4byte	.LVL37
+ 1973 03e9 850C0000 		.4byte	0xc85
+ 1974 03ed F7030000 		.4byte	0x3f7
+ 1975 03f1 0D       		.uleb128 0xd
+ 1976 03f2 01       		.uleb128 0x1
+ 1977 03f3 50       		.byte	0x50
+ 1978 03f4 01       		.uleb128 0x1
+ 1979 03f5 30       		.byte	0x30
+ 1980 03f6 00       		.byte	0
+ 1981 03f7 10       		.uleb128 0x10
+ 1982 03f8 1A000000 		.4byte	.LVL38
+ 1983 03fc 960C0000 		.4byte	0xc96
+ 1984 0400 0D       		.uleb128 0xd
+ 1985 0401 01       		.uleb128 0x1
+ 1986 0402 50       		.byte	0x50
+ 1987 0403 01       		.uleb128 0x1
+ 1988 0404 31       		.byte	0x31
+ 1989 0405 00       		.byte	0
+ 1990 0406 00       		.byte	0
+ 1991 0407 0F       		.uleb128 0xf
+ 1992 0408 6E040000 		.4byte	.LASF31
+ 1993 040c 01       		.byte	0x1
+ 1994 040d 7B       		.byte	0x7b
+ 1995 040e 00000000 		.4byte	.LFB69
+ 1996 0412 1C000000 		.4byte	.LFE69-.LFB69
+ 1997 0416 01       		.uleb128 0x1
+ 1998 0417 9C       		.byte	0x9c
+ 1999 0418 65040000 		.4byte	0x465
+ 2000 041c 0C       		.uleb128 0xc
+ 2001 041d 08000000 		.4byte	.LVL39
+ 2002 0421 630C0000 		.4byte	0xc63
+ 2003 0425 2F040000 		.4byte	0x42f
+ 2004 0429 0D       		.uleb128 0xd
+ 2005 042a 01       		.uleb128 0x1
+ 2006 042b 50       		.byte	0x50
+ 2007 042c 01       		.uleb128 0x1
+ 2008 042d 31       		.byte	0x31
+ 2009 042e 00       		.byte	0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 50
+
+
+ 2010 042f 0C       		.uleb128 0xc
+ 2011 0430 0E000000 		.4byte	.LVL40
+ 2012 0434 740C0000 		.4byte	0xc74
+ 2013 0438 42040000 		.4byte	0x442
+ 2014 043c 0D       		.uleb128 0xd
+ 2015 043d 01       		.uleb128 0x1
+ 2016 043e 50       		.byte	0x50
+ 2017 043f 01       		.uleb128 0x1
+ 2018 0440 30       		.byte	0x30
+ 2019 0441 00       		.byte	0
+ 2020 0442 0C       		.uleb128 0xc
+ 2021 0443 14000000 		.4byte	.LVL41
+ 2022 0447 850C0000 		.4byte	0xc85
+ 2023 044b 55040000 		.4byte	0x455
+ 2024 044f 0D       		.uleb128 0xd
+ 2025 0450 01       		.uleb128 0x1
+ 2026 0451 50       		.byte	0x50
+ 2027 0452 01       		.uleb128 0x1
+ 2028 0453 30       		.byte	0x30
+ 2029 0454 00       		.byte	0
+ 2030 0455 10       		.uleb128 0x10
+ 2031 0456 1A000000 		.4byte	.LVL42
+ 2032 045a 960C0000 		.4byte	0xc96
+ 2033 045e 0D       		.uleb128 0xd
+ 2034 045f 01       		.uleb128 0x1
+ 2035 0460 50       		.byte	0x50
+ 2036 0461 01       		.uleb128 0x1
+ 2037 0462 31       		.byte	0x31
+ 2038 0463 00       		.byte	0
+ 2039 0464 00       		.byte	0
+ 2040 0465 0F       		.uleb128 0xf
+ 2041 0466 45030000 		.4byte	.LASF32
+ 2042 046a 01       		.byte	0x1
+ 2043 046b 82       		.byte	0x82
+ 2044 046c 00000000 		.4byte	.LFB70
+ 2045 0470 1C000000 		.4byte	.LFE70-.LFB70
+ 2046 0474 01       		.uleb128 0x1
+ 2047 0475 9C       		.byte	0x9c
+ 2048 0476 C3040000 		.4byte	0x4c3
+ 2049 047a 0C       		.uleb128 0xc
+ 2050 047b 08000000 		.4byte	.LVL43
+ 2051 047f 630C0000 		.4byte	0xc63
+ 2052 0483 8D040000 		.4byte	0x48d
+ 2053 0487 0D       		.uleb128 0xd
+ 2054 0488 01       		.uleb128 0x1
+ 2055 0489 50       		.byte	0x50
+ 2056 048a 01       		.uleb128 0x1
+ 2057 048b 31       		.byte	0x31
+ 2058 048c 00       		.byte	0
+ 2059 048d 0C       		.uleb128 0xc
+ 2060 048e 0E000000 		.4byte	.LVL44
+ 2061 0492 740C0000 		.4byte	0xc74
+ 2062 0496 A0040000 		.4byte	0x4a0
+ 2063 049a 0D       		.uleb128 0xd
+ 2064 049b 01       		.uleb128 0x1
+ 2065 049c 50       		.byte	0x50
+ 2066 049d 01       		.uleb128 0x1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 51
+
+
+ 2067 049e 30       		.byte	0x30
+ 2068 049f 00       		.byte	0
+ 2069 04a0 0C       		.uleb128 0xc
+ 2070 04a1 14000000 		.4byte	.LVL45
+ 2071 04a5 850C0000 		.4byte	0xc85
+ 2072 04a9 B3040000 		.4byte	0x4b3
+ 2073 04ad 0D       		.uleb128 0xd
+ 2074 04ae 01       		.uleb128 0x1
+ 2075 04af 50       		.byte	0x50
+ 2076 04b0 01       		.uleb128 0x1
+ 2077 04b1 31       		.byte	0x31
+ 2078 04b2 00       		.byte	0
+ 2079 04b3 10       		.uleb128 0x10
+ 2080 04b4 1A000000 		.4byte	.LVL46
+ 2081 04b8 960C0000 		.4byte	0xc96
+ 2082 04bc 0D       		.uleb128 0xd
+ 2083 04bd 01       		.uleb128 0x1
+ 2084 04be 50       		.byte	0x50
+ 2085 04bf 01       		.uleb128 0x1
+ 2086 04c0 30       		.byte	0x30
+ 2087 04c1 00       		.byte	0
+ 2088 04c2 00       		.byte	0
+ 2089 04c3 0F       		.uleb128 0xf
+ 2090 04c4 AD050000 		.4byte	.LASF33
+ 2091 04c8 01       		.byte	0x1
+ 2092 04c9 8C       		.byte	0x8c
+ 2093 04ca 00000000 		.4byte	.LFB71
+ 2094 04ce 22000000 		.4byte	.LFE71-.LFB71
+ 2095 04d2 01       		.uleb128 0x1
+ 2096 04d3 9C       		.byte	0x9c
+ 2097 04d4 34050000 		.4byte	0x534
+ 2098 04d8 0C       		.uleb128 0xc
+ 2099 04d9 08000000 		.4byte	.LVL47
+ 2100 04dd 630C0000 		.4byte	0xc63
+ 2101 04e1 EB040000 		.4byte	0x4eb
+ 2102 04e5 0D       		.uleb128 0xd
+ 2103 04e6 01       		.uleb128 0x1
+ 2104 04e7 50       		.byte	0x50
+ 2105 04e8 01       		.uleb128 0x1
+ 2106 04e9 30       		.byte	0x30
+ 2107 04ea 00       		.byte	0
+ 2108 04eb 0C       		.uleb128 0xc
+ 2109 04ec 0E000000 		.4byte	.LVL48
+ 2110 04f0 740C0000 		.4byte	0xc74
+ 2111 04f4 FE040000 		.4byte	0x4fe
+ 2112 04f8 0D       		.uleb128 0xd
+ 2113 04f9 01       		.uleb128 0x1
+ 2114 04fa 50       		.byte	0x50
+ 2115 04fb 01       		.uleb128 0x1
+ 2116 04fc 30       		.byte	0x30
+ 2117 04fd 00       		.byte	0
+ 2118 04fe 0C       		.uleb128 0xc
+ 2119 04ff 14000000 		.4byte	.LVL49
+ 2120 0503 850C0000 		.4byte	0xc85
+ 2121 0507 11050000 		.4byte	0x511
+ 2122 050b 0D       		.uleb128 0xd
+ 2123 050c 01       		.uleb128 0x1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 52
+
+
+ 2124 050d 50       		.byte	0x50
+ 2125 050e 01       		.uleb128 0x1
+ 2126 050f 30       		.byte	0x30
+ 2127 0510 00       		.byte	0
+ 2128 0511 0C       		.uleb128 0xc
+ 2129 0512 1A000000 		.4byte	.LVL50
+ 2130 0516 960C0000 		.4byte	0xc96
+ 2131 051a 24050000 		.4byte	0x524
+ 2132 051e 0D       		.uleb128 0xd
+ 2133 051f 01       		.uleb128 0x1
+ 2134 0520 50       		.byte	0x50
+ 2135 0521 01       		.uleb128 0x1
+ 2136 0522 30       		.byte	0x30
+ 2137 0523 00       		.byte	0
+ 2138 0524 10       		.uleb128 0x10
+ 2139 0525 20000000 		.4byte	.LVL51
+ 2140 0529 A70C0000 		.4byte	0xca7
+ 2141 052d 0D       		.uleb128 0xd
+ 2142 052e 01       		.uleb128 0x1
+ 2143 052f 50       		.byte	0x50
+ 2144 0530 01       		.uleb128 0x1
+ 2145 0531 49       		.byte	0x49
+ 2146 0532 00       		.byte	0
+ 2147 0533 00       		.byte	0
+ 2148 0534 0F       		.uleb128 0xf
+ 2149 0535 00000000 		.4byte	.LASF34
+ 2150 0539 01       		.byte	0x1
+ 2151 053a 96       		.byte	0x96
+ 2152 053b 00000000 		.4byte	.LFB72
+ 2153 053f 22000000 		.4byte	.LFE72-.LFB72
+ 2154 0543 01       		.uleb128 0x1
+ 2155 0544 9C       		.byte	0x9c
+ 2156 0545 A5050000 		.4byte	0x5a5
+ 2157 0549 0C       		.uleb128 0xc
+ 2158 054a 08000000 		.4byte	.LVL52
+ 2159 054e 1F0C0000 		.4byte	0xc1f
+ 2160 0552 5C050000 		.4byte	0x55c
+ 2161 0556 0D       		.uleb128 0xd
+ 2162 0557 01       		.uleb128 0x1
+ 2163 0558 50       		.byte	0x50
+ 2164 0559 01       		.uleb128 0x1
+ 2165 055a 30       		.byte	0x30
+ 2166 055b 00       		.byte	0
+ 2167 055c 0C       		.uleb128 0xc
+ 2168 055d 0E000000 		.4byte	.LVL53
+ 2169 0561 300C0000 		.4byte	0xc30
+ 2170 0565 6F050000 		.4byte	0x56f
+ 2171 0569 0D       		.uleb128 0xd
+ 2172 056a 01       		.uleb128 0x1
+ 2173 056b 50       		.byte	0x50
+ 2174 056c 01       		.uleb128 0x1
+ 2175 056d 30       		.byte	0x30
+ 2176 056e 00       		.byte	0
+ 2177 056f 0C       		.uleb128 0xc
+ 2178 0570 14000000 		.4byte	.LVL54
+ 2179 0574 410C0000 		.4byte	0xc41
+ 2180 0578 82050000 		.4byte	0x582
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 53
+
+
+ 2181 057c 0D       		.uleb128 0xd
+ 2182 057d 01       		.uleb128 0x1
+ 2183 057e 50       		.byte	0x50
+ 2184 057f 01       		.uleb128 0x1
+ 2185 0580 30       		.byte	0x30
+ 2186 0581 00       		.byte	0
+ 2187 0582 0C       		.uleb128 0xc
+ 2188 0583 1A000000 		.4byte	.LVL55
+ 2189 0587 520C0000 		.4byte	0xc52
+ 2190 058b 95050000 		.4byte	0x595
+ 2191 058f 0D       		.uleb128 0xd
+ 2192 0590 01       		.uleb128 0x1
+ 2193 0591 50       		.byte	0x50
+ 2194 0592 01       		.uleb128 0x1
+ 2195 0593 30       		.byte	0x30
+ 2196 0594 00       		.byte	0
+ 2197 0595 10       		.uleb128 0x10
+ 2198 0596 20000000 		.4byte	.LVL56
+ 2199 059a A70C0000 		.4byte	0xca7
+ 2200 059e 0D       		.uleb128 0xd
+ 2201 059f 01       		.uleb128 0x1
+ 2202 05a0 50       		.byte	0x50
+ 2203 05a1 01       		.uleb128 0x1
+ 2204 05a2 49       		.byte	0x49
+ 2205 05a3 00       		.byte	0
+ 2206 05a4 00       		.byte	0
+ 2207 05a5 0F       		.uleb128 0xf
+ 2208 05a6 62040000 		.4byte	.LASF35
+ 2209 05aa 01       		.byte	0x1
+ 2210 05ab A0       		.byte	0xa0
+ 2211 05ac 00000000 		.4byte	.LFB73
+ 2212 05b0 34000000 		.4byte	.LFE73-.LFB73
+ 2213 05b4 01       		.uleb128 0x1
+ 2214 05b5 9C       		.byte	0x9c
+ 2215 05b6 03060000 		.4byte	0x603
+ 2216 05ba 0A       		.uleb128 0xa
+ 2217 05bb 06000000 		.4byte	.LVL57
+ 2218 05bf 4B030000 		.4byte	0x34b
+ 2219 05c3 0A       		.uleb128 0xa
+ 2220 05c4 0E000000 		.4byte	.LVL58
+ 2221 05c8 B80C0000 		.4byte	0xcb8
+ 2222 05cc 0A       		.uleb128 0xa
+ 2223 05cd 12000000 		.4byte	.LVL59
+ 2224 05d1 A9030000 		.4byte	0x3a9
+ 2225 05d5 0A       		.uleb128 0xa
+ 2226 05d6 18000000 		.4byte	.LVL60
+ 2227 05da B80C0000 		.4byte	0xcb8
+ 2228 05de 0A       		.uleb128 0xa
+ 2229 05df 1C000000 		.4byte	.LVL61
+ 2230 05e3 07040000 		.4byte	0x407
+ 2231 05e7 0A       		.uleb128 0xa
+ 2232 05e8 22000000 		.4byte	.LVL62
+ 2233 05ec B80C0000 		.4byte	0xcb8
+ 2234 05f0 0A       		.uleb128 0xa
+ 2235 05f1 26000000 		.4byte	.LVL63
+ 2236 05f5 65040000 		.4byte	0x465
+ 2237 05f9 0A       		.uleb128 0xa
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 54
+
+
+ 2238 05fa 2C000000 		.4byte	.LVL64
+ 2239 05fe B80C0000 		.4byte	0xcb8
+ 2240 0602 00       		.byte	0
+ 2241 0603 0F       		.uleb128 0xf
+ 2242 0604 A2030000 		.4byte	.LASF36
+ 2243 0608 01       		.byte	0x1
+ 2244 0609 AD       		.byte	0xad
+ 2245 060a 00000000 		.4byte	.LFB74
+ 2246 060e 34000000 		.4byte	.LFE74-.LFB74
+ 2247 0612 01       		.uleb128 0x1
+ 2248 0613 9C       		.byte	0x9c
+ 2249 0614 61060000 		.4byte	0x661
+ 2250 0618 0A       		.uleb128 0xa
+ 2251 0619 06000000 		.4byte	.LVL65
+ 2252 061d D3010000 		.4byte	0x1d3
+ 2253 0621 0A       		.uleb128 0xa
+ 2254 0622 0E000000 		.4byte	.LVL66
+ 2255 0626 B80C0000 		.4byte	0xcb8
+ 2256 062a 0A       		.uleb128 0xa
+ 2257 062b 12000000 		.4byte	.LVL67
+ 2258 062f 31020000 		.4byte	0x231
+ 2259 0633 0A       		.uleb128 0xa
+ 2260 0634 18000000 		.4byte	.LVL68
+ 2261 0638 B80C0000 		.4byte	0xcb8
+ 2262 063c 0A       		.uleb128 0xa
+ 2263 063d 1C000000 		.4byte	.LVL69
+ 2264 0641 8F020000 		.4byte	0x28f
+ 2265 0645 0A       		.uleb128 0xa
+ 2266 0646 22000000 		.4byte	.LVL70
+ 2267 064a B80C0000 		.4byte	0xcb8
+ 2268 064e 0A       		.uleb128 0xa
+ 2269 064f 26000000 		.4byte	.LVL71
+ 2270 0653 ED020000 		.4byte	0x2ed
+ 2271 0657 0A       		.uleb128 0xa
+ 2272 0658 2C000000 		.4byte	.LVL72
+ 2273 065c B80C0000 		.4byte	0xcb8
+ 2274 0660 00       		.byte	0
+ 2275 0661 0F       		.uleb128 0xf
+ 2276 0662 B1010000 		.4byte	.LASF37
+ 2277 0666 01       		.byte	0x1
+ 2278 0667 B9       		.byte	0xb9
+ 2279 0668 00000000 		.4byte	.LFB75
+ 2280 066c 34000000 		.4byte	.LFE75-.LFB75
+ 2281 0670 01       		.uleb128 0x1
+ 2282 0671 9C       		.byte	0x9c
+ 2283 0672 BF060000 		.4byte	0x6bf
+ 2284 0676 0A       		.uleb128 0xa
+ 2285 0677 06000000 		.4byte	.LVL73
+ 2286 067b 07040000 		.4byte	0x407
+ 2287 067f 0A       		.uleb128 0xa
+ 2288 0680 0E000000 		.4byte	.LVL74
+ 2289 0684 B80C0000 		.4byte	0xcb8
+ 2290 0688 0A       		.uleb128 0xa
+ 2291 0689 12000000 		.4byte	.LVL75
+ 2292 068d A9030000 		.4byte	0x3a9
+ 2293 0691 0A       		.uleb128 0xa
+ 2294 0692 18000000 		.4byte	.LVL76
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 55
+
+
+ 2295 0696 B80C0000 		.4byte	0xcb8
+ 2296 069a 0A       		.uleb128 0xa
+ 2297 069b 1C000000 		.4byte	.LVL77
+ 2298 069f 4B030000 		.4byte	0x34b
+ 2299 06a3 0A       		.uleb128 0xa
+ 2300 06a4 22000000 		.4byte	.LVL78
+ 2301 06a8 B80C0000 		.4byte	0xcb8
+ 2302 06ac 0A       		.uleb128 0xa
+ 2303 06ad 26000000 		.4byte	.LVL79
+ 2304 06b1 65040000 		.4byte	0x465
+ 2305 06b5 0A       		.uleb128 0xa
+ 2306 06b6 2C000000 		.4byte	.LVL80
+ 2307 06ba B80C0000 		.4byte	0xcb8
+ 2308 06be 00       		.byte	0
+ 2309 06bf 0F       		.uleb128 0xf
+ 2310 06c0 6A010000 		.4byte	.LASF38
+ 2311 06c4 01       		.byte	0x1
+ 2312 06c5 C5       		.byte	0xc5
+ 2313 06c6 00000000 		.4byte	.LFB76
+ 2314 06ca 34000000 		.4byte	.LFE76-.LFB76
+ 2315 06ce 01       		.uleb128 0x1
+ 2316 06cf 9C       		.byte	0x9c
+ 2317 06d0 1D070000 		.4byte	0x71d
+ 2318 06d4 0A       		.uleb128 0xa
+ 2319 06d5 06000000 		.4byte	.LVL81
+ 2320 06d9 8F020000 		.4byte	0x28f
+ 2321 06dd 0A       		.uleb128 0xa
+ 2322 06de 0E000000 		.4byte	.LVL82
+ 2323 06e2 B80C0000 		.4byte	0xcb8
+ 2324 06e6 0A       		.uleb128 0xa
+ 2325 06e7 12000000 		.4byte	.LVL83
+ 2326 06eb 31020000 		.4byte	0x231
+ 2327 06ef 0A       		.uleb128 0xa
+ 2328 06f0 18000000 		.4byte	.LVL84
+ 2329 06f4 B80C0000 		.4byte	0xcb8
+ 2330 06f8 0A       		.uleb128 0xa
+ 2331 06f9 1C000000 		.4byte	.LVL85
+ 2332 06fd D3010000 		.4byte	0x1d3
+ 2333 0701 0A       		.uleb128 0xa
+ 2334 0702 22000000 		.4byte	.LVL86
+ 2335 0706 B80C0000 		.4byte	0xcb8
+ 2336 070a 0A       		.uleb128 0xa
+ 2337 070b 26000000 		.4byte	.LVL87
+ 2338 070f ED020000 		.4byte	0x2ed
+ 2339 0713 0A       		.uleb128 0xa
+ 2340 0714 2C000000 		.4byte	.LVL88
+ 2341 0718 B80C0000 		.4byte	0xcb8
+ 2342 071c 00       		.byte	0
+ 2343 071d 11       		.uleb128 0x11
+ 2344 071e 82050000 		.4byte	.LASF39
+ 2345 0722 01       		.byte	0x1
+ 2346 0723 0F01     		.2byte	0x10f
+ 2347 0725 00000000 		.4byte	.LFB81
+ 2348 0729 50020000 		.4byte	.LFE81-.LFB81
+ 2349 072d 01       		.uleb128 0x1
+ 2350 072e 9C       		.byte	0x9c
+ 2351 072f 8A080000 		.4byte	0x88a
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 56
+
+
+ 2352 0733 0A       		.uleb128 0xa
+ 2353 0734 06000000 		.4byte	.LVL89
+ 2354 0738 C90C0000 		.4byte	0xcc9
+ 2355 073c 0A       		.uleb128 0xa
+ 2356 073d 0A000000 		.4byte	.LVL90
+ 2357 0741 D00C0000 		.4byte	0xcd0
+ 2358 0745 0C       		.uleb128 0xc
+ 2359 0746 14000000 		.4byte	.LVL91
+ 2360 074a DB0C0000 		.4byte	0xcdb
+ 2361 074e 58070000 		.4byte	0x758
+ 2362 0752 0D       		.uleb128 0xd
+ 2363 0753 01       		.uleb128 0x1
+ 2364 0754 50       		.byte	0x50
+ 2365 0755 01       		.uleb128 0x1
+ 2366 0756 30       		.byte	0x30
+ 2367 0757 00       		.byte	0
+ 2368 0758 0C       		.uleb128 0xc
+ 2369 0759 92000000 		.4byte	.LVL102
+ 2370 075d D50B0000 		.4byte	0xbd5
+ 2371 0761 70070000 		.4byte	0x770
+ 2372 0765 0D       		.uleb128 0xd
+ 2373 0766 01       		.uleb128 0x1
+ 2374 0767 51       		.byte	0x51
+ 2375 0768 01       		.uleb128 0x1
+ 2376 0769 38       		.byte	0x38
+ 2377 076a 0D       		.uleb128 0xd
+ 2378 076b 01       		.uleb128 0x1
+ 2379 076c 50       		.byte	0x50
+ 2380 076d 01       		.uleb128 0x1
+ 2381 076e 31       		.byte	0x31
+ 2382 076f 00       		.byte	0
+ 2383 0770 0C       		.uleb128 0xc
+ 2384 0771 98000000 		.4byte	.LVL103
+ 2385 0775 EB0B0000 		.4byte	0xbeb
+ 2386 0779 87070000 		.4byte	0x787
+ 2387 077d 0D       		.uleb128 0xd
+ 2388 077e 01       		.uleb128 0x1
+ 2389 077f 50       		.byte	0x50
+ 2390 0780 05       		.uleb128 0x5
+ 2391 0781 03       		.byte	0x3
+ 2392 0782 08000000 		.4byte	.LC1
+ 2393 0786 00       		.byte	0
+ 2394 0787 0C       		.uleb128 0xc
+ 2395 0788 A0000000 		.4byte	.LVL104
+ 2396 078c D50B0000 		.4byte	0xbd5
+ 2397 0790 9F070000 		.4byte	0x79f
+ 2398 0794 0D       		.uleb128 0xd
+ 2399 0795 01       		.uleb128 0x1
+ 2400 0796 51       		.byte	0x51
+ 2401 0797 01       		.uleb128 0x1
+ 2402 0798 38       		.byte	0x38
+ 2403 0799 0D       		.uleb128 0xd
+ 2404 079a 01       		.uleb128 0x1
+ 2405 079b 50       		.byte	0x50
+ 2406 079c 01       		.uleb128 0x1
+ 2407 079d 31       		.byte	0x31
+ 2408 079e 00       		.byte	0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 57
+
+
+ 2409 079f 0A       		.uleb128 0xa
+ 2410 07a0 AC000000 		.4byte	.LVL106
+ 2411 07a4 070C0000 		.4byte	0xc07
+ 2412 07a8 0C       		.uleb128 0xc
+ 2413 07a9 B4000000 		.4byte	.LVL107
+ 2414 07ad D50B0000 		.4byte	0xbd5
+ 2415 07b1 C0070000 		.4byte	0x7c0
+ 2416 07b5 0D       		.uleb128 0xd
+ 2417 07b6 01       		.uleb128 0x1
+ 2418 07b7 51       		.byte	0x51
+ 2419 07b8 01       		.uleb128 0x1
+ 2420 07b9 31       		.byte	0x31
+ 2421 07ba 0D       		.uleb128 0xd
+ 2422 07bb 01       		.uleb128 0x1
+ 2423 07bc 50       		.byte	0x50
+ 2424 07bd 01       		.uleb128 0x1
+ 2425 07be 31       		.byte	0x31
+ 2426 07bf 00       		.byte	0
+ 2427 07c0 0C       		.uleb128 0xc
+ 2428 07c1 BA000000 		.4byte	.LVL108
+ 2429 07c5 EB0B0000 		.4byte	0xbeb
+ 2430 07c9 D7070000 		.4byte	0x7d7
+ 2431 07cd 0D       		.uleb128 0xd
+ 2432 07ce 01       		.uleb128 0x1
+ 2433 07cf 50       		.byte	0x50
+ 2434 07d0 05       		.uleb128 0x5
+ 2435 07d1 03       		.byte	0x3
+ 2436 07d2 00000000 		.4byte	.LC0
+ 2437 07d6 00       		.byte	0
+ 2438 07d7 0C       		.uleb128 0xc
+ 2439 07d8 C2000000 		.4byte	.LVL109
+ 2440 07dc D50B0000 		.4byte	0xbd5
+ 2441 07e0 EF070000 		.4byte	0x7ef
+ 2442 07e4 0D       		.uleb128 0xd
+ 2443 07e5 01       		.uleb128 0x1
+ 2444 07e6 51       		.byte	0x51
+ 2445 07e7 01       		.uleb128 0x1
+ 2446 07e8 31       		.byte	0x31
+ 2447 07e9 0D       		.uleb128 0xd
+ 2448 07ea 01       		.uleb128 0x1
+ 2449 07eb 50       		.byte	0x50
+ 2450 07ec 01       		.uleb128 0x1
+ 2451 07ed 31       		.byte	0x31
+ 2452 07ee 00       		.byte	0
+ 2453 07ef 0A       		.uleb128 0xa
+ 2454 07f0 CE000000 		.4byte	.LVL111
+ 2455 07f4 070C0000 		.4byte	0xc07
+ 2456 07f8 0C       		.uleb128 0xc
+ 2457 07f9 D6000000 		.4byte	.LVL112
+ 2458 07fd D50B0000 		.4byte	0xbd5
+ 2459 0801 10080000 		.4byte	0x810
+ 2460 0805 0D       		.uleb128 0xd
+ 2461 0806 01       		.uleb128 0x1
+ 2462 0807 51       		.byte	0x51
+ 2463 0808 01       		.uleb128 0x1
+ 2464 0809 38       		.byte	0x38
+ 2465 080a 0D       		.uleb128 0xd
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 58
+
+
+ 2466 080b 01       		.uleb128 0x1
+ 2467 080c 50       		.byte	0x50
+ 2468 080d 01       		.uleb128 0x1
+ 2469 080e 30       		.byte	0x30
+ 2470 080f 00       		.byte	0
+ 2471 0810 0C       		.uleb128 0xc
+ 2472 0811 DC000000 		.4byte	.LVL113
+ 2473 0815 EB0B0000 		.4byte	0xbeb
+ 2474 0819 27080000 		.4byte	0x827
+ 2475 081d 0D       		.uleb128 0xd
+ 2476 081e 01       		.uleb128 0x1
+ 2477 081f 50       		.byte	0x50
+ 2478 0820 05       		.uleb128 0x5
+ 2479 0821 03       		.byte	0x3
+ 2480 0822 10000000 		.4byte	.LC2
+ 2481 0826 00       		.byte	0
+ 2482 0827 0C       		.uleb128 0xc
+ 2483 0828 E4000000 		.4byte	.LVL114
+ 2484 082c D50B0000 		.4byte	0xbd5
+ 2485 0830 3F080000 		.4byte	0x83f
+ 2486 0834 0D       		.uleb128 0xd
+ 2487 0835 01       		.uleb128 0x1
+ 2488 0836 51       		.byte	0x51
+ 2489 0837 01       		.uleb128 0x1
+ 2490 0838 3A       		.byte	0x3a
+ 2491 0839 0D       		.uleb128 0xd
+ 2492 083a 01       		.uleb128 0x1
+ 2493 083b 50       		.byte	0x50
+ 2494 083c 01       		.uleb128 0x1
+ 2495 083d 30       		.byte	0x30
+ 2496 083e 00       		.byte	0
+ 2497 083f 0C       		.uleb128 0xc
+ 2498 0840 00010000 		.4byte	.LVL117
+ 2499 0844 EC0C0000 		.4byte	0xcec
+ 2500 0848 53080000 		.4byte	0x853
+ 2501 084c 0D       		.uleb128 0xd
+ 2502 084d 01       		.uleb128 0x1
+ 2503 084e 50       		.byte	0x50
+ 2504 084f 02       		.uleb128 0x2
+ 2505 0850 08       		.byte	0x8
+ 2506 0851 2D       		.byte	0x2d
+ 2507 0852 00       		.byte	0
+ 2508 0853 0A       		.uleb128 0xa
+ 2509 0854 0C010000 		.4byte	.LVL118
+ 2510 0858 070C0000 		.4byte	0xc07
+ 2511 085c 0A       		.uleb128 0xa
+ 2512 085d 14010000 		.4byte	.LVL119
+ 2513 0861 070C0000 		.4byte	0xc07
+ 2514 0865 0A       		.uleb128 0xa
+ 2515 0866 76010000 		.4byte	.LVL120
+ 2516 086a 03060000 		.4byte	0x603
+ 2517 086e 0A       		.uleb128 0xa
+ 2518 086f 98010000 		.4byte	.LVL121
+ 2519 0873 BF060000 		.4byte	0x6bf
+ 2520 0877 0A       		.uleb128 0xa
+ 2521 0878 C0010000 		.4byte	.LVL122
+ 2522 087c 61060000 		.4byte	0x661
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 59
+
+
+ 2523 0880 0A       		.uleb128 0xa
+ 2524 0881 E8010000 		.4byte	.LVL123
+ 2525 0885 A5050000 		.4byte	0x5a5
+ 2526 0889 00       		.byte	0
+ 2527 088a 12       		.uleb128 0x12
+ 2528 088b 3A040000 		.4byte	.LASF101
+ 2529 088f 01       		.byte	0x1
+ 2530 0890 5702     		.2byte	0x257
+ 2531 0892 68000000 		.4byte	0x68
+ 2532 0896 00000000 		.4byte	.LFB82
+ 2533 089a B0000000 		.4byte	.LFE82-.LFB82
+ 2534 089e 01       		.uleb128 0x1
+ 2535 089f 9C       		.byte	0x9c
+ 2536 08a0 5D090000 		.4byte	0x95d
+ 2537 08a4 0A       		.uleb128 0xa
+ 2538 08a5 08000000 		.4byte	.LVL124
+ 2539 08a9 FD0C0000 		.4byte	0xcfd
+ 2540 08ad 0C       		.uleb128 0xc
+ 2541 08ae 10000000 		.4byte	.LVL125
+ 2542 08b2 D50B0000 		.4byte	0xbd5
+ 2543 08b6 C5080000 		.4byte	0x8c5
+ 2544 08ba 0D       		.uleb128 0xd
+ 2545 08bb 01       		.uleb128 0x1
+ 2546 08bc 51       		.byte	0x51
+ 2547 08bd 01       		.uleb128 0x1
+ 2548 08be 30       		.byte	0x30
+ 2549 08bf 0D       		.uleb128 0xd
+ 2550 08c0 01       		.uleb128 0x1
+ 2551 08c1 50       		.byte	0x50
+ 2552 08c2 01       		.uleb128 0x1
+ 2553 08c3 30       		.byte	0x30
+ 2554 08c4 00       		.byte	0
+ 2555 08c5 0C       		.uleb128 0xc
+ 2556 08c6 1E000000 		.4byte	.LVL126
+ 2557 08ca 040D0000 		.4byte	0xd04
+ 2558 08ce DC080000 		.4byte	0x8dc
+ 2559 08d2 0D       		.uleb128 0xd
+ 2560 08d3 01       		.uleb128 0x1
+ 2561 08d4 50       		.byte	0x50
+ 2562 08d5 05       		.uleb128 0x5
+ 2563 08d6 03       		.byte	0x3
+ 2564 08d7 00000000 		.4byte	RISING_EDGE_1
+ 2565 08db 00       		.byte	0
+ 2566 08dc 0C       		.uleb128 0xc
+ 2567 08dd 24000000 		.4byte	.LVL127
+ 2568 08e1 150D0000 		.4byte	0xd15
+ 2569 08e5 F3080000 		.4byte	0x8f3
+ 2570 08e9 0D       		.uleb128 0xd
+ 2571 08ea 01       		.uleb128 0x1
+ 2572 08eb 50       		.byte	0x50
+ 2573 08ec 05       		.uleb128 0x5
+ 2574 08ed 03       		.byte	0x3
+ 2575 08ee 00000000 		.4byte	FALLING_EDGE_1
+ 2576 08f2 00       		.byte	0
+ 2577 08f3 0C       		.uleb128 0xc
+ 2578 08f4 2A000000 		.4byte	.LVL128
+ 2579 08f8 260D0000 		.4byte	0xd26
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 60
+
+
+ 2580 08fc 0A090000 		.4byte	0x90a
+ 2581 0900 0D       		.uleb128 0xd
+ 2582 0901 01       		.uleb128 0x1
+ 2583 0902 50       		.byte	0x50
+ 2584 0903 05       		.uleb128 0x5
+ 2585 0904 03       		.byte	0x3
+ 2586 0905 00000000 		.4byte	RISING_EDGE_2
+ 2587 0909 00       		.byte	0
+ 2588 090a 0C       		.uleb128 0xc
+ 2589 090b 30000000 		.4byte	.LVL129
+ 2590 090f 370D0000 		.4byte	0xd37
+ 2591 0913 21090000 		.4byte	0x921
+ 2592 0917 0D       		.uleb128 0xd
+ 2593 0918 01       		.uleb128 0x1
+ 2594 0919 50       		.byte	0x50
+ 2595 091a 05       		.uleb128 0x5
+ 2596 091b 03       		.byte	0x3
+ 2597 091c 00000000 		.4byte	FALLING_EDGE_2
+ 2598 0920 00       		.byte	0
+ 2599 0921 0C       		.uleb128 0xc
+ 2600 0922 36000000 		.4byte	.LVL130
+ 2601 0926 480D0000 		.4byte	0xd48
+ 2602 092a 38090000 		.4byte	0x938
+ 2603 092e 0D       		.uleb128 0xd
+ 2604 092f 01       		.uleb128 0x1
+ 2605 0930 50       		.byte	0x50
+ 2606 0931 05       		.uleb128 0x5
+ 2607 0932 03       		.byte	0x3
+ 2608 0933 00000000 		.4byte	HALL_SENSOR
+ 2609 0937 00       		.byte	0
+ 2610 0938 0A       		.uleb128 0xa
+ 2611 0939 48000000 		.4byte	.LVL131
+ 2612 093d 03060000 		.4byte	0x603
+ 2613 0941 0A       		.uleb128 0xa
+ 2614 0942 56000000 		.4byte	.LVL132
+ 2615 0946 03060000 		.4byte	0x603
+ 2616 094a 0A       		.uleb128 0xa
+ 2617 094b 7A000000 		.4byte	.LVL133
+ 2618 094f BF060000 		.4byte	0x6bf
+ 2619 0953 0A       		.uleb128 0xa
+ 2620 0954 88000000 		.4byte	.LVL134
+ 2621 0958 BF060000 		.4byte	0x6bf
+ 2622 095c 00       		.byte	0
+ 2623 095d 13       		.uleb128 0x13
+ 2624 095e EC040000 		.4byte	.LASF40
+ 2625 0962 05       		.byte	0x5
+ 2626 0963 9606     		.2byte	0x696
+ 2627 0965 69090000 		.4byte	0x969
+ 2628 0969 14       		.uleb128 0x14
+ 2629 096a 76000000 		.4byte	0x76
+ 2630 096e 15       		.uleb128 0x15
+ 2631 096f F9040000 		.4byte	.LASF41
+ 2632 0973 01       		.byte	0x1
+ 2633 0974 16       		.byte	0x16
+ 2634 0975 99000000 		.4byte	0x99
+ 2635 0979 05       		.uleb128 0x5
+ 2636 097a 03       		.byte	0x3
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 61
+
+
+ 2637 097b 00000000 		.4byte	bad_dx_count
+ 2638 097f 15       		.uleb128 0x15
+ 2639 0980 D8040000 		.4byte	.LASF42
+ 2640 0984 01       		.byte	0x1
+ 2641 0985 17       		.byte	0x17
+ 2642 0986 BD000000 		.4byte	0xbd
+ 2643 098a 05       		.uleb128 0x5
+ 2644 098b 03       		.byte	0x3
+ 2645 098c 00000000 		.4byte	percent_good_counts
+ 2646 0990 16       		.uleb128 0x16
+ 2647 0991 99000000 		.4byte	0x99
+ 2648 0995 A0090000 		.4byte	0x9a0
+ 2649 0999 17       		.uleb128 0x17
+ 2650 099a F1000000 		.4byte	0xf1
+ 2651 099e 09       		.byte	0x9
+ 2652 099f 00       		.byte	0
+ 2653 09a0 15       		.uleb128 0x15
+ 2654 09a1 FF000000 		.4byte	.LASF43
+ 2655 09a5 01       		.byte	0x1
+ 2656 09a6 18       		.byte	0x18
+ 2657 09a7 90090000 		.4byte	0x990
+ 2658 09ab 05       		.uleb128 0x5
+ 2659 09ac 03       		.byte	0x3
+ 2660 09ad 00000000 		.4byte	bad_event_array
+ 2661 09b1 15       		.uleb128 0x15
+ 2662 09b2 5E020000 		.4byte	.LASF44
+ 2663 09b6 01       		.byte	0x1
+ 2664 09b7 19       		.byte	0x19
+ 2665 09b8 90090000 		.4byte	0x990
+ 2666 09bc 05       		.uleb128 0x5
+ 2667 09bd 03       		.byte	0x3
+ 2668 09be 00000000 		.4byte	code_trace_array
+ 2669 09c2 16       		.uleb128 0x16
+ 2670 09c3 B1000000 		.4byte	0xb1
+ 2671 09c7 D2090000 		.4byte	0x9d2
+ 2672 09cb 17       		.uleb128 0x17
+ 2673 09cc F1000000 		.4byte	0xf1
+ 2674 09d0 0A       		.byte	0xa
+ 2675 09d1 00       		.byte	0
+ 2676 09d2 15       		.uleb128 0x15
+ 2677 09d3 1E050000 		.4byte	.LASF45
+ 2678 09d7 01       		.byte	0x1
+ 2679 09d8 20       		.byte	0x20
+ 2680 09d9 C2090000 		.4byte	0x9c2
+ 2681 09dd 05       		.uleb128 0x5
+ 2682 09de 03       		.byte	0x3
+ 2683 09df 00000000 		.4byte	yaw_table
+ 2684 09e3 15       		.uleb128 0x15
+ 2685 09e4 41050000 		.4byte	.LASF46
+ 2686 09e8 01       		.byte	0x1
+ 2687 09e9 20       		.byte	0x20
+ 2688 09ea B1000000 		.4byte	0xb1
+ 2689 09ee 05       		.uleb128 0x5
+ 2690 09ef 03       		.byte	0x3
+ 2691 09f0 00000000 		.4byte	yaw_index
+ 2692 09f4 15       		.uleb128 0x15
+ 2693 09f5 56040000 		.4byte	.LASF47
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 62
+
+
+ 2694 09f9 01       		.byte	0x1
+ 2695 09fa 22       		.byte	0x22
+ 2696 09fb C2090000 		.4byte	0x9c2
+ 2697 09ff 05       		.uleb128 0x5
+ 2698 0a00 03       		.byte	0x3
+ 2699 0a01 00000000 		.4byte	pitch_table
+ 2700 0a05 15       		.uleb128 0x15
+ 2701 0a06 ED000000 		.4byte	.LASF48
+ 2702 0a0a 01       		.byte	0x1
+ 2703 0a0b 22       		.byte	0x22
+ 2704 0a0c B1000000 		.4byte	0xb1
+ 2705 0a10 05       		.uleb128 0x5
+ 2706 0a11 03       		.byte	0x3
+ 2707 0a12 00000000 		.4byte	pitch_index
+ 2708 0a16 15       		.uleb128 0x15
+ 2709 0a17 26010000 		.4byte	.LASF49
+ 2710 0a1b 01       		.byte	0x1
+ 2711 0a1c 25       		.byte	0x25
+ 2712 0a1d B1000000 		.4byte	0xb1
+ 2713 0a21 05       		.uleb128 0x5
+ 2714 0a22 03       		.byte	0x3
+ 2715 0a23 00000000 		.4byte	prev_yaw_index
+ 2716 0a27 15       		.uleb128 0x15
+ 2717 0a28 8B010000 		.4byte	.LASF50
+ 2718 0a2c 01       		.byte	0x1
+ 2719 0a2d 25       		.byte	0x25
+ 2720 0a2e B1000000 		.4byte	0xb1
+ 2721 0a32 05       		.uleb128 0x5
+ 2722 0a33 03       		.byte	0x3
+ 2723 0a34 00000000 		.4byte	prev_pitch_index
+ 2724 0a38 15       		.uleb128 0x15
+ 2725 0a39 5F010000 		.4byte	.LASF51
+ 2726 0a3d 01       		.byte	0x1
+ 2727 0a3e 28       		.byte	0x28
+ 2728 0a3f B1000000 		.4byte	0xb1
+ 2729 0a43 05       		.uleb128 0x5
+ 2730 0a44 03       		.byte	0x3
+ 2731 0a45 00000000 		.4byte	move_steps
+ 2732 0a49 15       		.uleb128 0x15
+ 2733 0a4a 01020000 		.4byte	.LASF52
+ 2734 0a4e 01       		.byte	0x1
+ 2735 0a4f 28       		.byte	0x28
+ 2736 0a50 B1000000 		.4byte	0xb1
+ 2737 0a54 05       		.uleb128 0x5
+ 2738 0a55 03       		.byte	0x3
+ 2739 0a56 00000000 		.4byte	pitch_move_steps
+ 2740 0a5a 15       		.uleb128 0x15
+ 2741 0a5b 4C020000 		.4byte	.LASF53
+ 2742 0a5f 01       		.byte	0x1
+ 2743 0a60 28       		.byte	0x28
+ 2744 0a61 B1000000 		.4byte	0xb1
+ 2745 0a65 05       		.uleb128 0x5
+ 2746 0a66 03       		.byte	0x3
+ 2747 0a67 00000000 		.4byte	pitch_no_of_steps
+ 2748 0a6b 15       		.uleb128 0x15
+ 2749 0a6c 06050000 		.4byte	.LASF54
+ 2750 0a70 01       		.byte	0x1
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 63
+
+
+ 2751 0a71 2B       		.byte	0x2b
+ 2752 0a72 68000000 		.4byte	0x68
+ 2753 0a76 05       		.uleb128 0x5
+ 2754 0a77 03       		.byte	0x3
+ 2755 0a78 00000000 		.4byte	count
+ 2756 0a7c 15       		.uleb128 0x15
+ 2757 0a7d 93000000 		.4byte	.LASF55
+ 2758 0a81 01       		.byte	0x1
+ 2759 0a82 2B       		.byte	0x2b
+ 2760 0a83 68000000 		.4byte	0x68
+ 2761 0a87 05       		.uleb128 0x5
+ 2762 0a88 03       		.byte	0x3
+ 2763 0a89 00000000 		.4byte	count2
+ 2764 0a8d 15       		.uleb128 0x15
+ 2765 0a8e C1050000 		.4byte	.LASF56
+ 2766 0a92 01       		.byte	0x1
+ 2767 0a93 2B       		.byte	0x2b
+ 2768 0a94 68000000 		.4byte	0x68
+ 2769 0a98 05       		.uleb128 0x5
+ 2770 0a99 03       		.byte	0x3
+ 2771 0a9a 00000000 		.4byte	sensor_delay_count
+ 2772 0a9e 15       		.uleb128 0x15
+ 2773 0a9f 76030000 		.4byte	.LASF57
+ 2774 0aa3 01       		.byte	0x1
+ 2775 0aa4 2E       		.byte	0x2e
+ 2776 0aa5 BD000000 		.4byte	0xbd
+ 2777 0aa9 05       		.uleb128 0x5
+ 2778 0aaa 03       		.byte	0x3
+ 2779 0aab 00000000 		.4byte	distance
+ 2780 0aaf 15       		.uleb128 0x15
+ 2781 0ab0 C9000000 		.4byte	.LASF58
+ 2782 0ab4 01       		.byte	0x1
+ 2783 0ab5 2E       		.byte	0x2e
+ 2784 0ab6 BD000000 		.4byte	0xbd
+ 2785 0aba 05       		.uleb128 0x5
+ 2786 0abb 03       		.byte	0x3
+ 2787 0abc 00000000 		.4byte	distance2
+ 2788 0ac0 15       		.uleb128 0x15
+ 2789 0ac1 F9000000 		.4byte	.LASF59
+ 2790 0ac5 01       		.byte	0x1
+ 2791 0ac6 32       		.byte	0x32
+ 2792 0ac7 8D000000 		.4byte	0x8d
+ 2793 0acb 05       		.uleb128 0x5
+ 2794 0acc 03       		.byte	0x3
+ 2795 0acd 00000000 		.4byte	delay
+ 2796 0ad1 18       		.uleb128 0x18
+ 2797 0ad2 73756D00 		.ascii	"sum\000"
+ 2798 0ad6 01       		.byte	0x1
+ 2799 0ad7 35       		.byte	0x35
+ 2800 0ad8 68000000 		.4byte	0x68
+ 2801 0adc 05       		.uleb128 0x5
+ 2802 0add 03       		.byte	0x3
+ 2803 0ade 00000000 		.4byte	sum
+ 2804 0ae2 15       		.uleb128 0x15
+ 2805 0ae3 D3000000 		.4byte	.LASF60
+ 2806 0ae7 01       		.byte	0x1
+ 2807 0ae8 35       		.byte	0x35
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 64
+
+
+ 2808 0ae9 68000000 		.4byte	0x68
+ 2809 0aed 05       		.uleb128 0x5
+ 2810 0aee 03       		.byte	0x3
+ 2811 0aef 00000000 		.4byte	difference
+ 2812 0af3 15       		.uleb128 0x15
+ 2813 0af4 D3020000 		.4byte	.LASF61
+ 2814 0af8 01       		.byte	0x1
+ 2815 0af9 36       		.byte	0x36
+ 2816 0afa 68000000 		.4byte	0x68
+ 2817 0afe 05       		.uleb128 0x5
+ 2818 0aff 03       		.byte	0x3
+ 2819 0b00 00000000 		.4byte	hall_count
+ 2820 0b04 15       		.uleb128 0x15
+ 2821 0b05 E4000000 		.4byte	.LASF62
+ 2822 0b09 01       		.byte	0x1
+ 2823 0b0a 39       		.byte	0x39
+ 2824 0b0b 8D000000 		.4byte	0x8d
+ 2825 0b0f 05       		.uleb128 0x5
+ 2826 0b10 03       		.byte	0x3
+ 2827 0b11 00000000 		.4byte	ccw_flag
+ 2828 0b15 15       		.uleb128 0x15
+ 2829 0b16 87020000 		.4byte	.LASF63
+ 2830 0b1a 01       		.byte	0x1
+ 2831 0b1b 39       		.byte	0x39
+ 2832 0b1c 8D000000 		.4byte	0x8d
+ 2833 0b20 05       		.uleb128 0x5
+ 2834 0b21 03       		.byte	0x3
+ 2835 0b22 00000000 		.4byte	cw_flag
+ 2836 0b26 15       		.uleb128 0x15
+ 2837 0b27 5A050000 		.4byte	.LASF64
+ 2838 0b2b 01       		.byte	0x1
+ 2839 0b2c 3C       		.byte	0x3c
+ 2840 0b2d A5000000 		.4byte	0xa5
+ 2841 0b31 05       		.uleb128 0x5
+ 2842 0b32 03       		.byte	0x3
+ 2843 0b33 00000000 		.4byte	no_of_steps
+ 2844 0b37 18       		.uleb128 0x18
+ 2845 0b38 6900     		.ascii	"i\000"
+ 2846 0b3a 01       		.byte	0x1
+ 2847 0b3b 3F       		.byte	0x3f
+ 2848 0b3c 68000000 		.4byte	0x68
+ 2849 0b40 05       		.uleb128 0x5
+ 2850 0b41 03       		.byte	0x3
+ 2851 0b42 00000000 		.4byte	i
+ 2852 0b46 15       		.uleb128 0x15
+ 2853 0b47 3E020000 		.4byte	.LASF65
+ 2854 0b4b 01       		.byte	0x1
+ 2855 0b4c 42       		.byte	0x42
+ 2856 0b4d BD000000 		.4byte	0xbd
+ 2857 0b51 05       		.uleb128 0x5
+ 2858 0b52 03       		.byte	0x3
+ 2859 0b53 00000000 		.4byte	prev_distance
+ 2860 0b57 15       		.uleb128 0x15
+ 2861 0b58 2F020000 		.4byte	.LASF66
+ 2862 0b5c 01       		.byte	0x1
+ 2863 0b5d 42       		.byte	0x42
+ 2864 0b5e BD000000 		.4byte	0xbd
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 65
+
+
+ 2865 0b62 05       		.uleb128 0x5
+ 2866 0b63 03       		.byte	0x3
+ 2867 0b64 00000000 		.4byte	prev_distance2
+ 2868 0b68 15       		.uleb128 0x15
+ 2869 0b69 AB020000 		.4byte	.LASF67
+ 2870 0b6d 01       		.byte	0x1
+ 2871 0b6e 45       		.byte	0x45
+ 2872 0b6f 81000000 		.4byte	0x81
+ 2873 0b73 05       		.uleb128 0x5
+ 2874 0b74 03       		.byte	0x3
+ 2875 0b75 00000000 		.4byte	hall_sensor_flag
+ 2876 0b79 15       		.uleb128 0x15
+ 2877 0b7a C0040000 		.4byte	.LASF68
+ 2878 0b7e 01       		.byte	0x1
+ 2879 0b7f 46       		.byte	0x46
+ 2880 0b80 81000000 		.4byte	0x81
+ 2881 0b84 05       		.uleb128 0x5
+ 2882 0b85 03       		.byte	0x3
+ 2883 0b86 00000000 		.4byte	pitch_limit
+ 2884 0b8a 16       		.uleb128 0x16
+ 2885 0b8b D7000000 		.4byte	0xd7
+ 2886 0b8f 9A0B0000 		.4byte	0xb9a
+ 2887 0b93 17       		.uleb128 0x17
+ 2888 0b94 F1000000 		.4byte	0xf1
+ 2889 0b98 08       		.byte	0x8
+ 2890 0b99 00       		.byte	0
+ 2891 0b9a 15       		.uleb128 0x15
+ 2892 0b9b 92030000 		.4byte	.LASF69
+ 2893 0b9f 01       		.byte	0x1
+ 2894 0ba0 48       		.byte	0x48
+ 2895 0ba1 8A0B0000 		.4byte	0xb8a
+ 2896 0ba5 05       		.uleb128 0x5
+ 2897 0ba6 03       		.byte	0x3
+ 2898 0ba7 00000000 		.4byte	lcd_string
+ 2899 0bab 19       		.uleb128 0x19
+ 2900 0bac FD020000 		.4byte	.LASF70
+ 2901 0bb0 06       		.byte	0x6
+ 2902 0bb1 4F       		.byte	0x4f
+ 2903 0bb2 19       		.uleb128 0x19
+ 2904 0bb3 4B050000 		.4byte	.LASF71
+ 2905 0bb7 06       		.byte	0x6
+ 2906 0bb8 50       		.byte	0x50
+ 2907 0bb9 1A       		.uleb128 0x1a
+ 2908 0bba 4D030000 		.4byte	.LASF88
+ 2909 0bbe 06       		.byte	0x6
+ 2910 0bbf 5D       		.byte	0x5d
+ 2911 0bc0 99000000 		.4byte	0x99
+ 2912 0bc4 1B       		.uleb128 0x1b
+ 2913 0bc5 35010000 		.4byte	.LASF72
+ 2914 0bc9 06       		.byte	0x6
+ 2915 0bca 5A       		.byte	0x5a
+ 2916 0bcb D50B0000 		.4byte	0xbd5
+ 2917 0bcf 1C       		.uleb128 0x1c
+ 2918 0bd0 99000000 		.4byte	0x99
+ 2919 0bd4 00       		.byte	0
+ 2920 0bd5 1B       		.uleb128 0x1b
+ 2921 0bd6 34050000 		.4byte	.LASF73
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 66
+
+
+ 2922 0bda 07       		.byte	0x7
+ 2923 0bdb 3D       		.byte	0x3d
+ 2924 0bdc EB0B0000 		.4byte	0xbeb
+ 2925 0be0 1C       		.uleb128 0x1c
+ 2926 0be1 81000000 		.4byte	0x81
+ 2927 0be5 1C       		.uleb128 0x1c
+ 2928 0be6 81000000 		.4byte	0x81
+ 2929 0bea 00       		.byte	0
+ 2930 0beb 1B       		.uleb128 0x1b
+ 2931 0bec 1A030000 		.4byte	.LASF74
+ 2932 0bf0 07       		.byte	0x7
+ 2933 0bf1 3C       		.byte	0x3c
+ 2934 0bf2 FC0B0000 		.4byte	0xbfc
+ 2935 0bf6 1C       		.uleb128 0x1c
+ 2936 0bf7 FC0B0000 		.4byte	0xbfc
+ 2937 0bfb 00       		.byte	0
+ 2938 0bfc 06       		.uleb128 0x6
+ 2939 0bfd 04       		.byte	0x4
+ 2940 0bfe 020C0000 		.4byte	0xc02
+ 2941 0c02 1D       		.uleb128 0x1d
+ 2942 0c03 CB000000 		.4byte	0xcb
+ 2943 0c07 1B       		.uleb128 0x1b
+ 2944 0c08 7F030000 		.4byte	.LASF75
+ 2945 0c0c 07       		.byte	0x7
+ 2946 0c0d 61       		.byte	0x61
+ 2947 0c0e 180C0000 		.4byte	0xc18
+ 2948 0c12 1C       		.uleb128 0x1c
+ 2949 0c13 99000000 		.4byte	0x99
+ 2950 0c17 00       		.byte	0
+ 2951 0c18 19       		.uleb128 0x19
+ 2952 0c19 A6000000 		.4byte	.LASF76
+ 2953 0c1d 08       		.byte	0x8
+ 2954 0c1e 4F       		.byte	0x4f
+ 2955 0c1f 1B       		.uleb128 0x1b
+ 2956 0c20 86000000 		.4byte	.LASF77
+ 2957 0c24 09       		.byte	0x9
+ 2958 0c25 26       		.byte	0x26
+ 2959 0c26 300C0000 		.4byte	0xc30
+ 2960 0c2a 1C       		.uleb128 0x1c
+ 2961 0c2b 81000000 		.4byte	0x81
+ 2962 0c2f 00       		.byte	0
+ 2963 0c30 1B       		.uleb128 0x1b
+ 2964 0c31 38030000 		.4byte	.LASF78
+ 2965 0c35 0A       		.byte	0xa
+ 2966 0c36 26       		.byte	0x26
+ 2967 0c37 410C0000 		.4byte	0xc41
+ 2968 0c3b 1C       		.uleb128 0x1c
+ 2969 0c3c 81000000 		.4byte	0x81
+ 2970 0c40 00       		.byte	0
+ 2971 0c41 1B       		.uleb128 0x1b
+ 2972 0c42 F4010000 		.4byte	.LASF79
+ 2973 0c46 0B       		.byte	0xb
+ 2974 0c47 26       		.byte	0x26
+ 2975 0c48 520C0000 		.4byte	0xc52
+ 2976 0c4c 1C       		.uleb128 0x1c
+ 2977 0c4d 81000000 		.4byte	0x81
+ 2978 0c51 00       		.byte	0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 67
+
+
+ 2979 0c52 1B       		.uleb128 0x1b
+ 2980 0c53 66050000 		.4byte	.LASF80
+ 2981 0c57 0C       		.byte	0xc
+ 2982 0c58 26       		.byte	0x26
+ 2983 0c59 630C0000 		.4byte	0xc63
+ 2984 0c5d 1C       		.uleb128 0x1c
+ 2985 0c5e 81000000 		.4byte	0x81
+ 2986 0c62 00       		.byte	0
+ 2987 0c63 1B       		.uleb128 0x1b
+ 2988 0c64 7C010000 		.4byte	.LASF81
+ 2989 0c68 0D       		.byte	0xd
+ 2990 0c69 26       		.byte	0x26
+ 2991 0c6a 740C0000 		.4byte	0xc74
+ 2992 0c6e 1C       		.uleb128 0x1c
+ 2993 0c6f 81000000 		.4byte	0x81
+ 2994 0c73 00       		.byte	0
+ 2995 0c74 1B       		.uleb128 0x1b
+ 2996 0c75 9C010000 		.4byte	.LASF82
+ 2997 0c79 0E       		.byte	0xe
+ 2998 0c7a 26       		.byte	0x26
+ 2999 0c7b 850C0000 		.4byte	0xc85
+ 3000 0c7f 1C       		.uleb128 0x1c
+ 3001 0c80 81000000 		.4byte	0x81
+ 3002 0c84 00       		.byte	0
+ 3003 0c85 1B       		.uleb128 0x1b
+ 3004 0c86 3F040000 		.4byte	.LASF83
+ 3005 0c8a 0F       		.byte	0xf
+ 3006 0c8b 26       		.byte	0x26
+ 3007 0c8c 960C0000 		.4byte	0xc96
+ 3008 0c90 1C       		.uleb128 0x1c
+ 3009 0c91 81000000 		.4byte	0x81
+ 3010 0c95 00       		.byte	0
+ 3011 0c96 1B       		.uleb128 0x1b
+ 3012 0c97 76040000 		.4byte	.LASF84
+ 3013 0c9b 10       		.byte	0x10
+ 3014 0c9c 26       		.byte	0x26
+ 3015 0c9d A70C0000 		.4byte	0xca7
+ 3016 0ca1 1C       		.uleb128 0x1c
+ 3017 0ca2 81000000 		.4byte	0x81
+ 3018 0ca6 00       		.byte	0
+ 3019 0ca7 1B       		.uleb128 0x1b
+ 3020 0ca8 B9050000 		.4byte	.LASF85
+ 3021 0cac 11       		.byte	0x11
+ 3022 0cad 76       		.byte	0x76
+ 3023 0cae B80C0000 		.4byte	0xcb8
+ 3024 0cb2 1C       		.uleb128 0x1c
+ 3025 0cb3 99000000 		.4byte	0x99
+ 3026 0cb7 00       		.byte	0
+ 3027 0cb8 1B       		.uleb128 0x1b
+ 3028 0cb9 BC020000 		.4byte	.LASF86
+ 3029 0cbd 11       		.byte	0x11
+ 3030 0cbe 77       		.byte	0x77
+ 3031 0cbf C90C0000 		.4byte	0xcc9
+ 3032 0cc3 1C       		.uleb128 0x1c
+ 3033 0cc4 8D000000 		.4byte	0x8d
+ 3034 0cc8 00       		.byte	0
+ 3035 0cc9 19       		.uleb128 0x19
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 68
+
+
+ 3036 0cca 12020000 		.4byte	.LASF87
+ 3037 0cce 08       		.byte	0x8
+ 3038 0ccf 50       		.byte	0x50
+ 3039 0cd0 1A       		.uleb128 0x1a
+ 3040 0cd1 70000000 		.4byte	.LASF89
+ 3041 0cd5 08       		.byte	0x8
+ 3042 0cd6 5D       		.byte	0x5d
+ 3043 0cd7 99000000 		.4byte	0x99
+ 3044 0cdb 1B       		.uleb128 0x1b
+ 3045 0cdc 0F010000 		.4byte	.LASF90
+ 3046 0ce0 08       		.byte	0x8
+ 3047 0ce1 5A       		.byte	0x5a
+ 3048 0ce2 EC0C0000 		.4byte	0xcec
+ 3049 0ce6 1C       		.uleb128 0x1c
+ 3050 0ce7 99000000 		.4byte	0x99
+ 3051 0ceb 00       		.byte	0
+ 3052 0cec 1B       		.uleb128 0x1b
+ 3053 0ced CC040000 		.4byte	.LASF91
+ 3054 0cf1 07       		.byte	0x7
+ 3055 0cf2 3E       		.byte	0x3e
+ 3056 0cf3 FD0C0000 		.4byte	0xcfd
+ 3057 0cf7 1C       		.uleb128 0x1c
+ 3058 0cf8 CB000000 		.4byte	0xcb
+ 3059 0cfc 00       		.byte	0
+ 3060 0cfd 19       		.uleb128 0x19
+ 3061 0cfe 6F020000 		.4byte	.LASF92
+ 3062 0d02 07       		.byte	0x7
+ 3063 0d03 38       		.byte	0x38
+ 3064 0d04 1B       		.uleb128 0x1b
+ 3065 0d05 21020000 		.4byte	.LASF93
+ 3066 0d09 12       		.byte	0x12
+ 3067 0d0a 18       		.byte	0x18
+ 3068 0d0b 150D0000 		.4byte	0xd15
+ 3069 0d0f 1C       		.uleb128 0x1c
+ 3070 0d10 DE000000 		.4byte	0xde
+ 3071 0d14 00       		.byte	0
+ 3072 0d15 1B       		.uleb128 0x1b
+ 3073 0d16 85040000 		.4byte	.LASF94
+ 3074 0d1a 13       		.byte	0x13
+ 3075 0d1b 18       		.byte	0x18
+ 3076 0d1c 260D0000 		.4byte	0xd26
+ 3077 0d20 1C       		.uleb128 0x1c
+ 3078 0d21 DE000000 		.4byte	0xde
+ 3079 0d25 00       		.byte	0
+ 3080 0d26 1B       		.uleb128 0x1b
+ 3081 0d27 79020000 		.4byte	.LASF95
+ 3082 0d2b 14       		.byte	0x14
+ 3083 0d2c 18       		.byte	0x18
+ 3084 0d2d 370D0000 		.4byte	0xd37
+ 3085 0d31 1C       		.uleb128 0x1c
+ 3086 0d32 DE000000 		.4byte	0xde
+ 3087 0d36 00       		.byte	0
+ 3088 0d37 1B       		.uleb128 0x1b
+ 3089 0d38 9D020000 		.4byte	.LASF96
+ 3090 0d3c 15       		.byte	0x15
+ 3091 0d3d 18       		.byte	0x18
+ 3092 0d3e 480D0000 		.4byte	0xd48
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 69
+
+
+ 3093 0d42 1C       		.uleb128 0x1c
+ 3094 0d43 DE000000 		.4byte	0xde
+ 3095 0d47 00       		.byte	0
+ 3096 0d48 1E       		.uleb128 0x1e
+ 3097 0d49 2A030000 		.4byte	.LASF102
+ 3098 0d4d 16       		.byte	0x16
+ 3099 0d4e 18       		.byte	0x18
+ 3100 0d4f 1C       		.uleb128 0x1c
+ 3101 0d50 DE000000 		.4byte	0xde
+ 3102 0d54 00       		.byte	0
+ 3103 0d55 00       		.byte	0
+ 3104              		.section	.debug_abbrev,"",%progbits
+ 3105              	.Ldebug_abbrev0:
+ 3106 0000 01       		.uleb128 0x1
+ 3107 0001 11       		.uleb128 0x11
+ 3108 0002 01       		.byte	0x1
+ 3109 0003 25       		.uleb128 0x25
+ 3110 0004 0E       		.uleb128 0xe
+ 3111 0005 13       		.uleb128 0x13
+ 3112 0006 0B       		.uleb128 0xb
+ 3113 0007 03       		.uleb128 0x3
+ 3114 0008 0E       		.uleb128 0xe
+ 3115 0009 1B       		.uleb128 0x1b
+ 3116 000a 0E       		.uleb128 0xe
+ 3117 000b 55       		.uleb128 0x55
+ 3118 000c 17       		.uleb128 0x17
+ 3119 000d 11       		.uleb128 0x11
+ 3120 000e 01       		.uleb128 0x1
+ 3121 000f 10       		.uleb128 0x10
+ 3122 0010 17       		.uleb128 0x17
+ 3123 0011 00       		.byte	0
+ 3124 0012 00       		.byte	0
+ 3125 0013 02       		.uleb128 0x2
+ 3126 0014 24       		.uleb128 0x24
+ 3127 0015 00       		.byte	0
+ 3128 0016 0B       		.uleb128 0xb
+ 3129 0017 0B       		.uleb128 0xb
+ 3130 0018 3E       		.uleb128 0x3e
+ 3131 0019 0B       		.uleb128 0xb
+ 3132 001a 03       		.uleb128 0x3
+ 3133 001b 0E       		.uleb128 0xe
+ 3134 001c 00       		.byte	0
+ 3135 001d 00       		.byte	0
+ 3136 001e 03       		.uleb128 0x3
+ 3137 001f 16       		.uleb128 0x16
+ 3138 0020 00       		.byte	0
+ 3139 0021 03       		.uleb128 0x3
+ 3140 0022 0E       		.uleb128 0xe
+ 3141 0023 3A       		.uleb128 0x3a
+ 3142 0024 0B       		.uleb128 0xb
+ 3143 0025 3B       		.uleb128 0x3b
+ 3144 0026 0B       		.uleb128 0xb
+ 3145 0027 49       		.uleb128 0x49
+ 3146 0028 13       		.uleb128 0x13
+ 3147 0029 00       		.byte	0
+ 3148 002a 00       		.byte	0
+ 3149 002b 04       		.uleb128 0x4
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 70
+
+
+ 3150 002c 24       		.uleb128 0x24
+ 3151 002d 00       		.byte	0
+ 3152 002e 0B       		.uleb128 0xb
+ 3153 002f 0B       		.uleb128 0xb
+ 3154 0030 3E       		.uleb128 0x3e
+ 3155 0031 0B       		.uleb128 0xb
+ 3156 0032 03       		.uleb128 0x3
+ 3157 0033 08       		.uleb128 0x8
+ 3158 0034 00       		.byte	0
+ 3159 0035 00       		.byte	0
+ 3160 0036 05       		.uleb128 0x5
+ 3161 0037 16       		.uleb128 0x16
+ 3162 0038 00       		.byte	0
+ 3163 0039 03       		.uleb128 0x3
+ 3164 003a 0E       		.uleb128 0xe
+ 3165 003b 3A       		.uleb128 0x3a
+ 3166 003c 0B       		.uleb128 0xb
+ 3167 003d 3B       		.uleb128 0x3b
+ 3168 003e 05       		.uleb128 0x5
+ 3169 003f 49       		.uleb128 0x49
+ 3170 0040 13       		.uleb128 0x13
+ 3171 0041 00       		.byte	0
+ 3172 0042 00       		.byte	0
+ 3173 0043 06       		.uleb128 0x6
+ 3174 0044 0F       		.uleb128 0xf
+ 3175 0045 00       		.byte	0
+ 3176 0046 0B       		.uleb128 0xb
+ 3177 0047 0B       		.uleb128 0xb
+ 3178 0048 49       		.uleb128 0x49
+ 3179 0049 13       		.uleb128 0x13
+ 3180 004a 00       		.byte	0
+ 3181 004b 00       		.byte	0
+ 3182 004c 07       		.uleb128 0x7
+ 3183 004d 15       		.uleb128 0x15
+ 3184 004e 00       		.byte	0
+ 3185 004f 27       		.uleb128 0x27
+ 3186 0050 19       		.uleb128 0x19
+ 3187 0051 00       		.byte	0
+ 3188 0052 00       		.byte	0
+ 3189 0053 08       		.uleb128 0x8
+ 3190 0054 2E       		.uleb128 0x2e
+ 3191 0055 00       		.byte	0
+ 3192 0056 3F       		.uleb128 0x3f
+ 3193 0057 19       		.uleb128 0x19
+ 3194 0058 03       		.uleb128 0x3
+ 3195 0059 0E       		.uleb128 0xe
+ 3196 005a 3A       		.uleb128 0x3a
+ 3197 005b 0B       		.uleb128 0xb
+ 3198 005c 3B       		.uleb128 0x3b
+ 3199 005d 0B       		.uleb128 0xb
+ 3200 005e 27       		.uleb128 0x27
+ 3201 005f 19       		.uleb128 0x19
+ 3202 0060 11       		.uleb128 0x11
+ 3203 0061 01       		.uleb128 0x1
+ 3204 0062 12       		.uleb128 0x12
+ 3205 0063 06       		.uleb128 0x6
+ 3206 0064 40       		.uleb128 0x40
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 71
+
+
+ 3207 0065 18       		.uleb128 0x18
+ 3208 0066 9742     		.uleb128 0x2117
+ 3209 0068 19       		.uleb128 0x19
+ 3210 0069 00       		.byte	0
+ 3211 006a 00       		.byte	0
+ 3212 006b 09       		.uleb128 0x9
+ 3213 006c 2E       		.uleb128 0x2e
+ 3214 006d 01       		.byte	0x1
+ 3215 006e 3F       		.uleb128 0x3f
+ 3216 006f 19       		.uleb128 0x19
+ 3217 0070 03       		.uleb128 0x3
+ 3218 0071 0E       		.uleb128 0xe
+ 3219 0072 3A       		.uleb128 0x3a
+ 3220 0073 0B       		.uleb128 0xb
+ 3221 0074 3B       		.uleb128 0x3b
+ 3222 0075 0B       		.uleb128 0xb
+ 3223 0076 27       		.uleb128 0x27
+ 3224 0077 19       		.uleb128 0x19
+ 3225 0078 11       		.uleb128 0x11
+ 3226 0079 01       		.uleb128 0x1
+ 3227 007a 12       		.uleb128 0x12
+ 3228 007b 06       		.uleb128 0x6
+ 3229 007c 40       		.uleb128 0x40
+ 3230 007d 18       		.uleb128 0x18
+ 3231 007e 9742     		.uleb128 0x2117
+ 3232 0080 19       		.uleb128 0x19
+ 3233 0081 01       		.uleb128 0x1
+ 3234 0082 13       		.uleb128 0x13
+ 3235 0083 00       		.byte	0
+ 3236 0084 00       		.byte	0
+ 3237 0085 0A       		.uleb128 0xa
+ 3238 0086 898201   		.uleb128 0x4109
+ 3239 0089 00       		.byte	0
+ 3240 008a 11       		.uleb128 0x11
+ 3241 008b 01       		.uleb128 0x1
+ 3242 008c 31       		.uleb128 0x31
+ 3243 008d 13       		.uleb128 0x13
+ 3244 008e 00       		.byte	0
+ 3245 008f 00       		.byte	0
+ 3246 0090 0B       		.uleb128 0xb
+ 3247 0091 2E       		.uleb128 0x2e
+ 3248 0092 01       		.byte	0x1
+ 3249 0093 3F       		.uleb128 0x3f
+ 3250 0094 19       		.uleb128 0x19
+ 3251 0095 03       		.uleb128 0x3
+ 3252 0096 0E       		.uleb128 0xe
+ 3253 0097 3A       		.uleb128 0x3a
+ 3254 0098 0B       		.uleb128 0xb
+ 3255 0099 3B       		.uleb128 0x3b
+ 3256 009a 0B       		.uleb128 0xb
+ 3257 009b 27       		.uleb128 0x27
+ 3258 009c 19       		.uleb128 0x19
+ 3259 009d 11       		.uleb128 0x11
+ 3260 009e 01       		.uleb128 0x1
+ 3261 009f 12       		.uleb128 0x12
+ 3262 00a0 06       		.uleb128 0x6
+ 3263 00a1 40       		.uleb128 0x40
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 72
+
+
+ 3264 00a2 18       		.uleb128 0x18
+ 3265 00a3 9642     		.uleb128 0x2116
+ 3266 00a5 19       		.uleb128 0x19
+ 3267 00a6 01       		.uleb128 0x1
+ 3268 00a7 13       		.uleb128 0x13
+ 3269 00a8 00       		.byte	0
+ 3270 00a9 00       		.byte	0
+ 3271 00aa 0C       		.uleb128 0xc
+ 3272 00ab 898201   		.uleb128 0x4109
+ 3273 00ae 01       		.byte	0x1
+ 3274 00af 11       		.uleb128 0x11
+ 3275 00b0 01       		.uleb128 0x1
+ 3276 00b1 31       		.uleb128 0x31
+ 3277 00b2 13       		.uleb128 0x13
+ 3278 00b3 01       		.uleb128 0x1
+ 3279 00b4 13       		.uleb128 0x13
+ 3280 00b5 00       		.byte	0
+ 3281 00b6 00       		.byte	0
+ 3282 00b7 0D       		.uleb128 0xd
+ 3283 00b8 8A8201   		.uleb128 0x410a
+ 3284 00bb 00       		.byte	0
+ 3285 00bc 02       		.uleb128 0x2
+ 3286 00bd 18       		.uleb128 0x18
+ 3287 00be 9142     		.uleb128 0x2111
+ 3288 00c0 18       		.uleb128 0x18
+ 3289 00c1 00       		.byte	0
+ 3290 00c2 00       		.byte	0
+ 3291 00c3 0E       		.uleb128 0xe
+ 3292 00c4 2E       		.uleb128 0x2e
+ 3293 00c5 01       		.byte	0x1
+ 3294 00c6 3F       		.uleb128 0x3f
+ 3295 00c7 19       		.uleb128 0x19
+ 3296 00c8 03       		.uleb128 0x3
+ 3297 00c9 0E       		.uleb128 0xe
+ 3298 00ca 3A       		.uleb128 0x3a
+ 3299 00cb 0B       		.uleb128 0xb
+ 3300 00cc 3B       		.uleb128 0x3b
+ 3301 00cd 05       		.uleb128 0x5
+ 3302 00ce 27       		.uleb128 0x27
+ 3303 00cf 19       		.uleb128 0x19
+ 3304 00d0 11       		.uleb128 0x11
+ 3305 00d1 01       		.uleb128 0x1
+ 3306 00d2 12       		.uleb128 0x12
+ 3307 00d3 06       		.uleb128 0x6
+ 3308 00d4 40       		.uleb128 0x40
+ 3309 00d5 18       		.uleb128 0x18
+ 3310 00d6 9742     		.uleb128 0x2117
+ 3311 00d8 19       		.uleb128 0x19
+ 3312 00d9 01       		.uleb128 0x1
+ 3313 00da 13       		.uleb128 0x13
+ 3314 00db 00       		.byte	0
+ 3315 00dc 00       		.byte	0
+ 3316 00dd 0F       		.uleb128 0xf
+ 3317 00de 2E       		.uleb128 0x2e
+ 3318 00df 01       		.byte	0x1
+ 3319 00e0 3F       		.uleb128 0x3f
+ 3320 00e1 19       		.uleb128 0x19
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 73
+
+
+ 3321 00e2 03       		.uleb128 0x3
+ 3322 00e3 0E       		.uleb128 0xe
+ 3323 00e4 3A       		.uleb128 0x3a
+ 3324 00e5 0B       		.uleb128 0xb
+ 3325 00e6 3B       		.uleb128 0x3b
+ 3326 00e7 0B       		.uleb128 0xb
+ 3327 00e8 11       		.uleb128 0x11
+ 3328 00e9 01       		.uleb128 0x1
+ 3329 00ea 12       		.uleb128 0x12
+ 3330 00eb 06       		.uleb128 0x6
+ 3331 00ec 40       		.uleb128 0x40
+ 3332 00ed 18       		.uleb128 0x18
+ 3333 00ee 9742     		.uleb128 0x2117
+ 3334 00f0 19       		.uleb128 0x19
+ 3335 00f1 01       		.uleb128 0x1
+ 3336 00f2 13       		.uleb128 0x13
+ 3337 00f3 00       		.byte	0
+ 3338 00f4 00       		.byte	0
+ 3339 00f5 10       		.uleb128 0x10
+ 3340 00f6 898201   		.uleb128 0x4109
+ 3341 00f9 01       		.byte	0x1
+ 3342 00fa 11       		.uleb128 0x11
+ 3343 00fb 01       		.uleb128 0x1
+ 3344 00fc 31       		.uleb128 0x31
+ 3345 00fd 13       		.uleb128 0x13
+ 3346 00fe 00       		.byte	0
+ 3347 00ff 00       		.byte	0
+ 3348 0100 11       		.uleb128 0x11
+ 3349 0101 2E       		.uleb128 0x2e
+ 3350 0102 01       		.byte	0x1
+ 3351 0103 3F       		.uleb128 0x3f
+ 3352 0104 19       		.uleb128 0x19
+ 3353 0105 03       		.uleb128 0x3
+ 3354 0106 0E       		.uleb128 0xe
+ 3355 0107 3A       		.uleb128 0x3a
+ 3356 0108 0B       		.uleb128 0xb
+ 3357 0109 3B       		.uleb128 0x3b
+ 3358 010a 05       		.uleb128 0x5
+ 3359 010b 27       		.uleb128 0x27
+ 3360 010c 19       		.uleb128 0x19
+ 3361 010d 11       		.uleb128 0x11
+ 3362 010e 01       		.uleb128 0x1
+ 3363 010f 12       		.uleb128 0x12
+ 3364 0110 06       		.uleb128 0x6
+ 3365 0111 40       		.uleb128 0x40
+ 3366 0112 18       		.uleb128 0x18
+ 3367 0113 9642     		.uleb128 0x2116
+ 3368 0115 19       		.uleb128 0x19
+ 3369 0116 01       		.uleb128 0x1
+ 3370 0117 13       		.uleb128 0x13
+ 3371 0118 00       		.byte	0
+ 3372 0119 00       		.byte	0
+ 3373 011a 12       		.uleb128 0x12
+ 3374 011b 2E       		.uleb128 0x2e
+ 3375 011c 01       		.byte	0x1
+ 3376 011d 3F       		.uleb128 0x3f
+ 3377 011e 19       		.uleb128 0x19
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 74
+
+
+ 3378 011f 03       		.uleb128 0x3
+ 3379 0120 0E       		.uleb128 0xe
+ 3380 0121 3A       		.uleb128 0x3a
+ 3381 0122 0B       		.uleb128 0xb
+ 3382 0123 3B       		.uleb128 0x3b
+ 3383 0124 05       		.uleb128 0x5
+ 3384 0125 27       		.uleb128 0x27
+ 3385 0126 19       		.uleb128 0x19
+ 3386 0127 49       		.uleb128 0x49
+ 3387 0128 13       		.uleb128 0x13
+ 3388 0129 11       		.uleb128 0x11
+ 3389 012a 01       		.uleb128 0x1
+ 3390 012b 12       		.uleb128 0x12
+ 3391 012c 06       		.uleb128 0x6
+ 3392 012d 40       		.uleb128 0x40
+ 3393 012e 18       		.uleb128 0x18
+ 3394 012f 9742     		.uleb128 0x2117
+ 3395 0131 19       		.uleb128 0x19
+ 3396 0132 01       		.uleb128 0x1
+ 3397 0133 13       		.uleb128 0x13
+ 3398 0134 00       		.byte	0
+ 3399 0135 00       		.byte	0
+ 3400 0136 13       		.uleb128 0x13
+ 3401 0137 34       		.uleb128 0x34
+ 3402 0138 00       		.byte	0
+ 3403 0139 03       		.uleb128 0x3
+ 3404 013a 0E       		.uleb128 0xe
+ 3405 013b 3A       		.uleb128 0x3a
+ 3406 013c 0B       		.uleb128 0xb
+ 3407 013d 3B       		.uleb128 0x3b
+ 3408 013e 05       		.uleb128 0x5
+ 3409 013f 49       		.uleb128 0x49
+ 3410 0140 13       		.uleb128 0x13
+ 3411 0141 3F       		.uleb128 0x3f
+ 3412 0142 19       		.uleb128 0x19
+ 3413 0143 3C       		.uleb128 0x3c
+ 3414 0144 19       		.uleb128 0x19
+ 3415 0145 00       		.byte	0
+ 3416 0146 00       		.byte	0
+ 3417 0147 14       		.uleb128 0x14
+ 3418 0148 35       		.uleb128 0x35
+ 3419 0149 00       		.byte	0
+ 3420 014a 49       		.uleb128 0x49
+ 3421 014b 13       		.uleb128 0x13
+ 3422 014c 00       		.byte	0
+ 3423 014d 00       		.byte	0
+ 3424 014e 15       		.uleb128 0x15
+ 3425 014f 34       		.uleb128 0x34
+ 3426 0150 00       		.byte	0
+ 3427 0151 03       		.uleb128 0x3
+ 3428 0152 0E       		.uleb128 0xe
+ 3429 0153 3A       		.uleb128 0x3a
+ 3430 0154 0B       		.uleb128 0xb
+ 3431 0155 3B       		.uleb128 0x3b
+ 3432 0156 0B       		.uleb128 0xb
+ 3433 0157 49       		.uleb128 0x49
+ 3434 0158 13       		.uleb128 0x13
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 75
+
+
+ 3435 0159 3F       		.uleb128 0x3f
+ 3436 015a 19       		.uleb128 0x19
+ 3437 015b 02       		.uleb128 0x2
+ 3438 015c 18       		.uleb128 0x18
+ 3439 015d 00       		.byte	0
+ 3440 015e 00       		.byte	0
+ 3441 015f 16       		.uleb128 0x16
+ 3442 0160 01       		.uleb128 0x1
+ 3443 0161 01       		.byte	0x1
+ 3444 0162 49       		.uleb128 0x49
+ 3445 0163 13       		.uleb128 0x13
+ 3446 0164 01       		.uleb128 0x1
+ 3447 0165 13       		.uleb128 0x13
+ 3448 0166 00       		.byte	0
+ 3449 0167 00       		.byte	0
+ 3450 0168 17       		.uleb128 0x17
+ 3451 0169 21       		.uleb128 0x21
+ 3452 016a 00       		.byte	0
+ 3453 016b 49       		.uleb128 0x49
+ 3454 016c 13       		.uleb128 0x13
+ 3455 016d 2F       		.uleb128 0x2f
+ 3456 016e 0B       		.uleb128 0xb
+ 3457 016f 00       		.byte	0
+ 3458 0170 00       		.byte	0
+ 3459 0171 18       		.uleb128 0x18
+ 3460 0172 34       		.uleb128 0x34
+ 3461 0173 00       		.byte	0
+ 3462 0174 03       		.uleb128 0x3
+ 3463 0175 08       		.uleb128 0x8
+ 3464 0176 3A       		.uleb128 0x3a
+ 3465 0177 0B       		.uleb128 0xb
+ 3466 0178 3B       		.uleb128 0x3b
+ 3467 0179 0B       		.uleb128 0xb
+ 3468 017a 49       		.uleb128 0x49
+ 3469 017b 13       		.uleb128 0x13
+ 3470 017c 3F       		.uleb128 0x3f
+ 3471 017d 19       		.uleb128 0x19
+ 3472 017e 02       		.uleb128 0x2
+ 3473 017f 18       		.uleb128 0x18
+ 3474 0180 00       		.byte	0
+ 3475 0181 00       		.byte	0
+ 3476 0182 19       		.uleb128 0x19
+ 3477 0183 2E       		.uleb128 0x2e
+ 3478 0184 00       		.byte	0
+ 3479 0185 3F       		.uleb128 0x3f
+ 3480 0186 19       		.uleb128 0x19
+ 3481 0187 03       		.uleb128 0x3
+ 3482 0188 0E       		.uleb128 0xe
+ 3483 0189 3A       		.uleb128 0x3a
+ 3484 018a 0B       		.uleb128 0xb
+ 3485 018b 3B       		.uleb128 0x3b
+ 3486 018c 0B       		.uleb128 0xb
+ 3487 018d 27       		.uleb128 0x27
+ 3488 018e 19       		.uleb128 0x19
+ 3489 018f 3C       		.uleb128 0x3c
+ 3490 0190 19       		.uleb128 0x19
+ 3491 0191 00       		.byte	0
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 76
+
+
+ 3492 0192 00       		.byte	0
+ 3493 0193 1A       		.uleb128 0x1a
+ 3494 0194 2E       		.uleb128 0x2e
+ 3495 0195 00       		.byte	0
+ 3496 0196 3F       		.uleb128 0x3f
+ 3497 0197 19       		.uleb128 0x19
+ 3498 0198 03       		.uleb128 0x3
+ 3499 0199 0E       		.uleb128 0xe
+ 3500 019a 3A       		.uleb128 0x3a
+ 3501 019b 0B       		.uleb128 0xb
+ 3502 019c 3B       		.uleb128 0x3b
+ 3503 019d 0B       		.uleb128 0xb
+ 3504 019e 27       		.uleb128 0x27
+ 3505 019f 19       		.uleb128 0x19
+ 3506 01a0 49       		.uleb128 0x49
+ 3507 01a1 13       		.uleb128 0x13
+ 3508 01a2 3C       		.uleb128 0x3c
+ 3509 01a3 19       		.uleb128 0x19
+ 3510 01a4 00       		.byte	0
+ 3511 01a5 00       		.byte	0
+ 3512 01a6 1B       		.uleb128 0x1b
+ 3513 01a7 2E       		.uleb128 0x2e
+ 3514 01a8 01       		.byte	0x1
+ 3515 01a9 3F       		.uleb128 0x3f
+ 3516 01aa 19       		.uleb128 0x19
+ 3517 01ab 03       		.uleb128 0x3
+ 3518 01ac 0E       		.uleb128 0xe
+ 3519 01ad 3A       		.uleb128 0x3a
+ 3520 01ae 0B       		.uleb128 0xb
+ 3521 01af 3B       		.uleb128 0x3b
+ 3522 01b0 0B       		.uleb128 0xb
+ 3523 01b1 27       		.uleb128 0x27
+ 3524 01b2 19       		.uleb128 0x19
+ 3525 01b3 3C       		.uleb128 0x3c
+ 3526 01b4 19       		.uleb128 0x19
+ 3527 01b5 01       		.uleb128 0x1
+ 3528 01b6 13       		.uleb128 0x13
+ 3529 01b7 00       		.byte	0
+ 3530 01b8 00       		.byte	0
+ 3531 01b9 1C       		.uleb128 0x1c
+ 3532 01ba 05       		.uleb128 0x5
+ 3533 01bb 00       		.byte	0
+ 3534 01bc 49       		.uleb128 0x49
+ 3535 01bd 13       		.uleb128 0x13
+ 3536 01be 00       		.byte	0
+ 3537 01bf 00       		.byte	0
+ 3538 01c0 1D       		.uleb128 0x1d
+ 3539 01c1 26       		.uleb128 0x26
+ 3540 01c2 00       		.byte	0
+ 3541 01c3 49       		.uleb128 0x49
+ 3542 01c4 13       		.uleb128 0x13
+ 3543 01c5 00       		.byte	0
+ 3544 01c6 00       		.byte	0
+ 3545 01c7 1E       		.uleb128 0x1e
+ 3546 01c8 2E       		.uleb128 0x2e
+ 3547 01c9 01       		.byte	0x1
+ 3548 01ca 3F       		.uleb128 0x3f
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 77
+
+
+ 3549 01cb 19       		.uleb128 0x19
+ 3550 01cc 03       		.uleb128 0x3
+ 3551 01cd 0E       		.uleb128 0xe
+ 3552 01ce 3A       		.uleb128 0x3a
+ 3553 01cf 0B       		.uleb128 0xb
+ 3554 01d0 3B       		.uleb128 0x3b
+ 3555 01d1 0B       		.uleb128 0xb
+ 3556 01d2 27       		.uleb128 0x27
+ 3557 01d3 19       		.uleb128 0x19
+ 3558 01d4 3C       		.uleb128 0x3c
+ 3559 01d5 19       		.uleb128 0x19
+ 3560 01d6 00       		.byte	0
+ 3561 01d7 00       		.byte	0
+ 3562 01d8 00       		.byte	0
+ 3563              		.section	.debug_aranges,"",%progbits
+ 3564 0000 B4000000 		.4byte	0xb4
+ 3565 0004 0200     		.2byte	0x2
+ 3566 0006 00000000 		.4byte	.Ldebug_info0
+ 3567 000a 04       		.byte	0x4
+ 3568 000b 00       		.byte	0
+ 3569 000c 0000     		.2byte	0
+ 3570 000e 0000     		.2byte	0
+ 3571 0010 00000000 		.4byte	.LFB77
+ 3572 0014 14000000 		.4byte	.LFE77-.LFB77
+ 3573 0018 00000000 		.4byte	.LFB78
+ 3574 001c 08000000 		.4byte	.LFE78-.LFB78
+ 3575 0020 00000000 		.4byte	.LFB79
+ 3576 0024 8C000000 		.4byte	.LFE79-.LFB79
+ 3577 0028 00000000 		.4byte	.LFB80
+ 3578 002c 08000000 		.4byte	.LFE80-.LFB80
+ 3579 0030 00000000 		.4byte	.LFB63
+ 3580 0034 1C000000 		.4byte	.LFE63-.LFB63
+ 3581 0038 00000000 		.4byte	.LFB64
+ 3582 003c 1C000000 		.4byte	.LFE64-.LFB64
+ 3583 0040 00000000 		.4byte	.LFB65
+ 3584 0044 1C000000 		.4byte	.LFE65-.LFB65
+ 3585 0048 00000000 		.4byte	.LFB66
+ 3586 004c 1C000000 		.4byte	.LFE66-.LFB66
+ 3587 0050 00000000 		.4byte	.LFB67
+ 3588 0054 1C000000 		.4byte	.LFE67-.LFB67
+ 3589 0058 00000000 		.4byte	.LFB68
+ 3590 005c 1C000000 		.4byte	.LFE68-.LFB68
+ 3591 0060 00000000 		.4byte	.LFB69
+ 3592 0064 1C000000 		.4byte	.LFE69-.LFB69
+ 3593 0068 00000000 		.4byte	.LFB70
+ 3594 006c 1C000000 		.4byte	.LFE70-.LFB70
+ 3595 0070 00000000 		.4byte	.LFB71
+ 3596 0074 22000000 		.4byte	.LFE71-.LFB71
+ 3597 0078 00000000 		.4byte	.LFB72
+ 3598 007c 22000000 		.4byte	.LFE72-.LFB72
+ 3599 0080 00000000 		.4byte	.LFB73
+ 3600 0084 34000000 		.4byte	.LFE73-.LFB73
+ 3601 0088 00000000 		.4byte	.LFB74
+ 3602 008c 34000000 		.4byte	.LFE74-.LFB74
+ 3603 0090 00000000 		.4byte	.LFB75
+ 3604 0094 34000000 		.4byte	.LFE75-.LFB75
+ 3605 0098 00000000 		.4byte	.LFB76
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 78
+
+
+ 3606 009c 34000000 		.4byte	.LFE76-.LFB76
+ 3607 00a0 00000000 		.4byte	.LFB81
+ 3608 00a4 50020000 		.4byte	.LFE81-.LFB81
+ 3609 00a8 00000000 		.4byte	.LFB82
+ 3610 00ac B0000000 		.4byte	.LFE82-.LFB82
+ 3611 00b0 00000000 		.4byte	0
+ 3612 00b4 00000000 		.4byte	0
+ 3613              		.section	.debug_ranges,"",%progbits
+ 3614              	.Ldebug_ranges0:
+ 3615 0000 00000000 		.4byte	.LFB77
+ 3616 0004 14000000 		.4byte	.LFE77
+ 3617 0008 00000000 		.4byte	.LFB78
+ 3618 000c 08000000 		.4byte	.LFE78
+ 3619 0010 00000000 		.4byte	.LFB79
+ 3620 0014 8C000000 		.4byte	.LFE79
+ 3621 0018 00000000 		.4byte	.LFB80
+ 3622 001c 08000000 		.4byte	.LFE80
+ 3623 0020 00000000 		.4byte	.LFB63
+ 3624 0024 1C000000 		.4byte	.LFE63
+ 3625 0028 00000000 		.4byte	.LFB64
+ 3626 002c 1C000000 		.4byte	.LFE64
+ 3627 0030 00000000 		.4byte	.LFB65
+ 3628 0034 1C000000 		.4byte	.LFE65
+ 3629 0038 00000000 		.4byte	.LFB66
+ 3630 003c 1C000000 		.4byte	.LFE66
+ 3631 0040 00000000 		.4byte	.LFB67
+ 3632 0044 1C000000 		.4byte	.LFE67
+ 3633 0048 00000000 		.4byte	.LFB68
+ 3634 004c 1C000000 		.4byte	.LFE68
+ 3635 0050 00000000 		.4byte	.LFB69
+ 3636 0054 1C000000 		.4byte	.LFE69
+ 3637 0058 00000000 		.4byte	.LFB70
+ 3638 005c 1C000000 		.4byte	.LFE70
+ 3639 0060 00000000 		.4byte	.LFB71
+ 3640 0064 22000000 		.4byte	.LFE71
+ 3641 0068 00000000 		.4byte	.LFB72
+ 3642 006c 22000000 		.4byte	.LFE72
+ 3643 0070 00000000 		.4byte	.LFB73
+ 3644 0074 34000000 		.4byte	.LFE73
+ 3645 0078 00000000 		.4byte	.LFB74
+ 3646 007c 34000000 		.4byte	.LFE74
+ 3647 0080 00000000 		.4byte	.LFB75
+ 3648 0084 34000000 		.4byte	.LFE75
+ 3649 0088 00000000 		.4byte	.LFB76
+ 3650 008c 34000000 		.4byte	.LFE76
+ 3651 0090 00000000 		.4byte	.LFB81
+ 3652 0094 50020000 		.4byte	.LFE81
+ 3653 0098 00000000 		.4byte	.LFB82
+ 3654 009c B0000000 		.4byte	.LFE82
+ 3655 00a0 00000000 		.4byte	0
+ 3656 00a4 00000000 		.4byte	0
+ 3657              		.section	.debug_line,"",%progbits
+ 3658              	.Ldebug_line0:
+ 3659 0000 7A040000 		.section	.debug_str,"MS",%progbits,1
+ 3659      02001802 
+ 3659      00000201 
+ 3659      FB0E0D00 
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 79
+
+
+ 3659      01010101 
+ 3660              	.LASF34:
+ 3661 0000 73746F70 		.ascii	"stopMotor\000"
+ 3661      4D6F746F 
+ 3661      7200
+ 3662              	.LASF99:
+ 3663 000a 433A5C55 		.ascii	"C:\\Users\\rohi2\\OneDrive\\Documents\\PSoC Creator"
+ 3663      73657273 
+ 3663      5C726F68 
+ 3663      69325C4F 
+ 3663      6E654472 
+ 3664 0038 5C48524C 		.ascii	"\\HRLV-EZ4 - Indexing second motor - Copy\\Design01"
+ 3664      562D455A 
+ 3664      34202D20 
+ 3664      496E6465 
+ 3664      78696E67 
+ 3665 0069 2E637964 		.ascii	".cydsn\000"
+ 3665      736E00
+ 3666              	.LASF89:
+ 3667 0070 436F756E 		.ascii	"Counter_2_ReadCounter\000"
+ 3667      7465725F 
+ 3667      325F5265 
+ 3667      6164436F 
+ 3667      756E7465 
+ 3668              	.LASF77:
+ 3669 0086 50696E5F 		.ascii	"Pin_A1_Write\000"
+ 3669      41315F57 
+ 3669      72697465 
+ 3669      00
+ 3670              	.LASF55:
+ 3671 0093 636F756E 		.ascii	"count2\000"
+ 3671      743200
+ 3672              	.LASF0:
+ 3673 009a 7369676E 		.ascii	"signed char\000"
+ 3673      65642063 
+ 3673      68617200 
+ 3674              	.LASF76:
+ 3675 00a6 436F756E 		.ascii	"Counter_2_Start\000"
+ 3675      7465725F 
+ 3675      325F5374 
+ 3675      61727400 
+ 3676              	.LASF2:
+ 3677 00b6 73686F72 		.ascii	"short int\000"
+ 3677      7420696E 
+ 3677      7400
+ 3678              	.LASF21:
+ 3679 00c0 73697A65 		.ascii	"sizetype\000"
+ 3679      74797065 
+ 3679      00
+ 3680              	.LASF58:
+ 3681 00c9 64697374 		.ascii	"distance2\000"
+ 3681      616E6365 
+ 3681      3200
+ 3682              	.LASF60:
+ 3683 00d3 64696666 		.ascii	"difference\000"
+ 3683      6572656E 
+ 3683      636500
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 80
+
+
+ 3684              	.LASF18:
+ 3685 00de 63686172 		.ascii	"char8\000"
+ 3685      3800
+ 3686              	.LASF62:
+ 3687 00e4 6363775F 		.ascii	"ccw_flag\000"
+ 3687      666C6167 
+ 3687      00
+ 3688              	.LASF48:
+ 3689 00ed 70697463 		.ascii	"pitch_index\000"
+ 3689      685F696E 
+ 3689      64657800 
+ 3690              	.LASF59:
+ 3691 00f9 64656C61 		.ascii	"delay\000"
+ 3691      7900
+ 3692              	.LASF43:
+ 3693 00ff 6261645F 		.ascii	"bad_event_array\000"
+ 3693      6576656E 
+ 3693      745F6172 
+ 3693      72617900 
+ 3694              	.LASF90:
+ 3695 010f 436F756E 		.ascii	"Counter_2_WriteCounter\000"
+ 3695      7465725F 
+ 3695      325F5772 
+ 3695      69746543 
+ 3695      6F756E74 
+ 3696              	.LASF49:
+ 3697 0126 70726576 		.ascii	"prev_yaw_index\000"
+ 3697      5F796177 
+ 3697      5F696E64 
+ 3697      657800
+ 3698              	.LASF72:
+ 3699 0135 436F756E 		.ascii	"Counter_1_WriteCounter\000"
+ 3699      7465725F 
+ 3699      315F5772 
+ 3699      69746543 
+ 3699      6F756E74 
+ 3700              	.LASF12:
+ 3701 014c 75696E74 		.ascii	"uint16\000"
+ 3701      313600
+ 3702              	.LASF14:
+ 3703 0153 696E7431 		.ascii	"int16\000"
+ 3703      3600
+ 3704              	.LASF11:
+ 3705 0159 75696E74 		.ascii	"uint8\000"
+ 3705      3800
+ 3706              	.LASF51:
+ 3707 015f 6D6F7665 		.ascii	"move_steps\000"
+ 3707      5F737465 
+ 3707      707300
+ 3708              	.LASF38:
+ 3709 016a 636F756E 		.ascii	"counter_clockwise\000"
+ 3709      7465725F 
+ 3709      636C6F63 
+ 3709      6B776973 
+ 3709      6500
+ 3710              	.LASF81:
+ 3711 017c 50696E5F 		.ascii	"Pin_A1_1_Write\000"
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 81
+
+
+ 3711      41315F31 
+ 3711      5F577269 
+ 3711      746500
+ 3712              	.LASF50:
+ 3713 018b 70726576 		.ascii	"prev_pitch_index\000"
+ 3713      5F706974 
+ 3713      63685F69 
+ 3713      6E646578 
+ 3713      00
+ 3714              	.LASF82:
+ 3715 019c 50696E5F 		.ascii	"Pin_A2_1_Write\000"
+ 3715      41325F31 
+ 3715      5F577269 
+ 3715      746500
+ 3716              	.LASF16:
+ 3717 01ab 666C6F61 		.ascii	"float\000"
+ 3717      7400
+ 3718              	.LASF37:
+ 3719 01b1 636F756E 		.ascii	"counter_clockwise_1\000"
+ 3719      7465725F 
+ 3719      636C6F63 
+ 3719      6B776973 
+ 3719      655F3100 
+ 3720              	.LASF6:
+ 3721 01c5 6C6F6E67 		.ascii	"long long int\000"
+ 3721      206C6F6E 
+ 3721      6720696E 
+ 3721      7400
+ 3722              	.LASF25:
+ 3723 01d3 73746570 		.ascii	"step1\000"
+ 3723      3100
+ 3724              	.LASF26:
+ 3725 01d9 73746570 		.ascii	"step2\000"
+ 3725      3200
+ 3726              	.LASF27:
+ 3727 01df 73746570 		.ascii	"step3\000"
+ 3727      3300
+ 3728              	.LASF28:
+ 3729 01e5 73746570 		.ascii	"step4\000"
+ 3729      3400
+ 3730              	.LASF4:
+ 3731 01eb 6C6F6E67 		.ascii	"long int\000"
+ 3731      20696E74 
+ 3731      00
+ 3732              	.LASF79:
+ 3733 01f4 50696E5F 		.ascii	"Pin_B1_Write\000"
+ 3733      42315F57 
+ 3733      72697465 
+ 3733      00
+ 3734              	.LASF52:
+ 3735 0201 70697463 		.ascii	"pitch_move_steps\000"
+ 3735      685F6D6F 
+ 3735      76655F73 
+ 3735      74657073 
+ 3735      00
+ 3736              	.LASF87:
+ 3737 0212 436F756E 		.ascii	"Counter_2_Stop\000"
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 82
+
+
+ 3737      7465725F 
+ 3737      325F5374 
+ 3737      6F7000
+ 3738              	.LASF93:
+ 3739 0221 6973725F 		.ascii	"isr_1_StartEx\000"
+ 3739      315F5374 
+ 3739      61727445 
+ 3739      7800
+ 3740              	.LASF66:
+ 3741 022f 70726576 		.ascii	"prev_distance2\000"
+ 3741      5F646973 
+ 3741      74616E63 
+ 3741      653200
+ 3742              	.LASF65:
+ 3743 023e 70726576 		.ascii	"prev_distance\000"
+ 3743      5F646973 
+ 3743      74616E63 
+ 3743      6500
+ 3744              	.LASF53:
+ 3745 024c 70697463 		.ascii	"pitch_no_of_steps\000"
+ 3745      685F6E6F 
+ 3745      5F6F665F 
+ 3745      73746570 
+ 3745      7300
+ 3746              	.LASF44:
+ 3747 025e 636F6465 		.ascii	"code_trace_array\000"
+ 3747      5F747261 
+ 3747      63655F61 
+ 3747      72726179 
+ 3747      00
+ 3748              	.LASF92:
+ 3749 026f 4C43445F 		.ascii	"LCD_Start\000"
+ 3749      53746172 
+ 3749      7400
+ 3750              	.LASF95:
+ 3751 0279 6973725F 		.ascii	"isr_2_StartEx\000"
+ 3751      325F5374 
+ 3751      61727445 
+ 3751      7800
+ 3752              	.LASF63:
+ 3753 0287 63775F66 		.ascii	"cw_flag\000"
+ 3753      6C616700 
+ 3754              	.LASF1:
+ 3755 028f 756E7369 		.ascii	"unsigned char\000"
+ 3755      676E6564 
+ 3755      20636861 
+ 3755      7200
+ 3756              	.LASF96:
+ 3757 029d 6973725F 		.ascii	"isr_4_StartEx\000"
+ 3757      345F5374 
+ 3757      61727445 
+ 3757      7800
+ 3758              	.LASF67:
+ 3759 02ab 68616C6C 		.ascii	"hall_sensor_flag\000"
+ 3759      5F73656E 
+ 3759      736F725F 
+ 3759      666C6167 
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 83
+
+
+ 3759      00
+ 3760              	.LASF86:
+ 3761 02bc 43794465 		.ascii	"CyDelayUs\000"
+ 3761      6C617955 
+ 3761      7300
+ 3762              	.LASF20:
+ 3763 02c6 63796973 		.ascii	"cyisraddress\000"
+ 3763      72616464 
+ 3763      72657373 
+ 3763      00
+ 3764              	.LASF61:
+ 3765 02d3 68616C6C 		.ascii	"hall_count\000"
+ 3765      5F636F75 
+ 3765      6E7400
+ 3766              	.LASF7:
+ 3767 02de 6C6F6E67 		.ascii	"long long unsigned int\000"
+ 3767      206C6F6E 
+ 3767      6720756E 
+ 3767      7369676E 
+ 3767      65642069 
+ 3768              	.LASF29:
+ 3769 02f5 73746570 		.ascii	"step1_1\000"
+ 3769      315F3100 
+ 3770              	.LASF70:
+ 3771 02fd 436F756E 		.ascii	"Counter_1_Start\000"
+ 3771      7465725F 
+ 3771      315F5374 
+ 3771      61727400 
+ 3772              	.LASF8:
+ 3773 030d 756E7369 		.ascii	"unsigned int\000"
+ 3773      676E6564 
+ 3773      20696E74 
+ 3773      00
+ 3774              	.LASF74:
+ 3775 031a 4C43445F 		.ascii	"LCD_PrintString\000"
+ 3775      5072696E 
+ 3775      74537472 
+ 3775      696E6700 
+ 3776              	.LASF102:
+ 3777 032a 6973725F 		.ascii	"isr_5_StartEx\000"
+ 3777      355F5374 
+ 3777      61727445 
+ 3777      7800
+ 3778              	.LASF78:
+ 3779 0338 50696E5F 		.ascii	"Pin_A2_Write\000"
+ 3779      41325F57 
+ 3779      72697465 
+ 3779      00
+ 3780              	.LASF32:
+ 3781 0345 73746570 		.ascii	"step4_1\000"
+ 3781      345F3100 
+ 3782              	.LASF88:
+ 3783 034d 436F756E 		.ascii	"Counter_1_ReadCounter\000"
+ 3783      7465725F 
+ 3783      315F5265 
+ 3783      6164436F 
+ 3783      756E7465 
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 84
+
+
+ 3784              	.LASF3:
+ 3785 0363 73686F72 		.ascii	"short unsigned int\000"
+ 3785      7420756E 
+ 3785      7369676E 
+ 3785      65642069 
+ 3785      6E7400
+ 3786              	.LASF57:
+ 3787 0376 64697374 		.ascii	"distance\000"
+ 3787      616E6365 
+ 3787      00
+ 3788              	.LASF75:
+ 3789 037f 4C43445F 		.ascii	"LCD_PrintU32Number\000"
+ 3789      5072696E 
+ 3789      74553332 
+ 3789      4E756D62 
+ 3789      657200
+ 3790              	.LASF69:
+ 3791 0392 6C63645F 		.ascii	"lcd_string\000"
+ 3791      73747269 
+ 3791      6E6700
+ 3792              	.LASF19:
+ 3793 039d 63686172 		.ascii	"char\000"
+ 3793      00
+ 3794              	.LASF36:
+ 3795 03a2 636C6F63 		.ascii	"clockwise\000"
+ 3795      6B776973 
+ 3795      6500
+ 3796              	.LASF97:
+ 3797 03ac 474E5520 		.ascii	"GNU C 4.9.3 20150303 (release) [ARM/embedded-4_9-br"
+ 3797      4320342E 
+ 3797      392E3320 
+ 3797      32303135 
+ 3797      30333033 
+ 3798 03df 616E6368 		.ascii	"anch revision 221220] -mcpu=cortex-m3 -mthumb -g -O"
+ 3798      20726576 
+ 3798      6973696F 
+ 3798      6E203232 
+ 3798      31323230 
+ 3799 0412 67202D66 		.ascii	"g -ffunction-sections -ffat-lto-objects\000"
+ 3799      66756E63 
+ 3799      74696F6E 
+ 3799      2D736563 
+ 3799      74696F6E 
+ 3800              	.LASF101:
+ 3801 043a 6D61696E 		.ascii	"main\000"
+ 3801      00
+ 3802              	.LASF83:
+ 3803 043f 50696E5F 		.ascii	"Pin_B1_1_Write\000"
+ 3803      42315F31 
+ 3803      5F577269 
+ 3803      746500
+ 3804              	.LASF10:
+ 3805 044e 696E7433 		.ascii	"int32_t\000"
+ 3805      325F7400 
+ 3806              	.LASF47:
+ 3807 0456 70697463 		.ascii	"pitch_table\000"
+ 3807      685F7461 
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 85
+
+
+ 3807      626C6500 
+ 3808              	.LASF35:
+ 3809 0462 636C6F63 		.ascii	"clockwise_1\000"
+ 3809      6B776973 
+ 3809      655F3100 
+ 3810              	.LASF31:
+ 3811 046e 73746570 		.ascii	"step3_1\000"
+ 3811      335F3100 
+ 3812              	.LASF84:
+ 3813 0476 50696E5F 		.ascii	"Pin_B2_1_Write\000"
+ 3813      42325F31 
+ 3813      5F577269 
+ 3813      746500
+ 3814              	.LASF94:
+ 3815 0485 6973725F 		.ascii	"isr_3_StartEx\000"
+ 3815      335F5374 
+ 3815      61727445 
+ 3815      7800
+ 3816              	.LASF13:
+ 3817 0493 75696E74 		.ascii	"uint32\000"
+ 3817      333200
+ 3818              	.LASF98:
+ 3819 049a 6D61696E 		.ascii	"main.c\000"
+ 3819      2E6300
+ 3820              	.LASF5:
+ 3821 04a1 6C6F6E67 		.ascii	"long unsigned int\000"
+ 3821      20756E73 
+ 3821      69676E65 
+ 3821      6420696E 
+ 3821      7400
+ 3822              	.LASF15:
+ 3823 04b3 696E7433 		.ascii	"int32\000"
+ 3823      3200
+ 3824              	.LASF17:
+ 3825 04b9 646F7562 		.ascii	"double\000"
+ 3825      6C6500
+ 3826              	.LASF68:
+ 3827 04c0 70697463 		.ascii	"pitch_limit\000"
+ 3827      685F6C69 
+ 3827      6D697400 
+ 3828              	.LASF91:
+ 3829 04cc 4C43445F 		.ascii	"LCD_PutChar\000"
+ 3829      50757443 
+ 3829      68617200 
+ 3830              	.LASF42:
+ 3831 04d8 70657263 		.ascii	"percent_good_counts\000"
+ 3831      656E745F 
+ 3831      676F6F64 
+ 3831      5F636F75 
+ 3831      6E747300 
+ 3832              	.LASF40:
+ 3833 04ec 49544D5F 		.ascii	"ITM_RxBuffer\000"
+ 3833      52784275 
+ 3833      66666572 
+ 3833      00
+ 3834              	.LASF41:
+ 3835 04f9 6261645F 		.ascii	"bad_dx_count\000"
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 86
+
+
+ 3835      64785F63 
+ 3835      6F756E74 
+ 3835      00
+ 3836              	.LASF54:
+ 3837 0506 636F756E 		.ascii	"count\000"
+ 3837      7400
+ 3838              	.LASF30:
+ 3839 050c 73746570 		.ascii	"step2_1\000"
+ 3839      325F3100 
+ 3840              	.LASF9:
+ 3841 0514 5F5F696E 		.ascii	"__int32_t\000"
+ 3841      7433325F 
+ 3841      7400
+ 3842              	.LASF45:
+ 3843 051e 7961775F 		.ascii	"yaw_table\000"
+ 3843      7461626C 
+ 3843      6500
+ 3844              	.LASF100:
+ 3845 0528 48414C4C 		.ascii	"HALL_SENSOR\000"
+ 3845      5F53454E 
+ 3845      534F5200 
+ 3846              	.LASF73:
+ 3847 0534 4C43445F 		.ascii	"LCD_Position\000"
+ 3847      506F7369 
+ 3847      74696F6E 
+ 3847      00
+ 3848              	.LASF46:
+ 3849 0541 7961775F 		.ascii	"yaw_index\000"
+ 3849      696E6465 
+ 3849      7800
+ 3850              	.LASF71:
+ 3851 054b 436F756E 		.ascii	"Counter_1_Stop\000"
+ 3851      7465725F 
+ 3851      315F5374 
+ 3851      6F7000
+ 3852              	.LASF64:
+ 3853 055a 6E6F5F6F 		.ascii	"no_of_steps\000"
+ 3853      665F7374 
+ 3853      65707300 
+ 3854              	.LASF80:
+ 3855 0566 50696E5F 		.ascii	"Pin_B2_Write\000"
+ 3855      42325F57 
+ 3855      72697465 
+ 3855      00
+ 3856              	.LASF23:
+ 3857 0573 46414C4C 		.ascii	"FALLING_EDGE_1\000"
+ 3857      494E475F 
+ 3857      45444745 
+ 3857      5F3100
+ 3858              	.LASF39:
+ 3859 0582 46414C4C 		.ascii	"FALLING_EDGE_2\000"
+ 3859      494E475F 
+ 3859      45444745 
+ 3859      5F3200
+ 3860              	.LASF22:
+ 3861 0591 52495349 		.ascii	"RISING_EDGE_1\000"
+ 3861      4E475F45 
+ARM GAS  C:\Users\rohi2\AppData\Local\Temp\ccKb2bhd.s 			page 87
+
+
+ 3861      4447455F 
+ 3861      3100
+ 3862              	.LASF24:
+ 3863 059f 52495349 		.ascii	"RISING_EDGE_2\000"
+ 3863      4E475F45 
+ 3863      4447455F 
+ 3863      3200
+ 3864              	.LASF33:
+ 3865 05ad 73746F70 		.ascii	"stopMotor_1\000"
+ 3865      4D6F746F 
+ 3865      725F3100 
+ 3866              	.LASF85:
+ 3867 05b9 43794465 		.ascii	"CyDelay\000"
+ 3867      6C617900 
+ 3868              	.LASF56:
+ 3869 05c1 73656E73 		.ascii	"sensor_delay_count\000"
+ 3869      6F725F64 
+ 3869      656C6179 
+ 3869      5F636F75 
+ 3869      6E7400
+ 3870              		.ident	"GCC: (GNU Tools for ARM Embedded Processors) 4.9.3 20150303 (release) [ARM/embedded-4_9-br

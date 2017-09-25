@@ -1,0 +1,5 @@
+C:\Users\rohi2\OneDrive\Documents\PSoC Creator\HRLV-EZ4 - Indexing second motor\Design01.cydsn\Design01.cyprj|f47e9f74-8cd2-497f-844e-1858667e5f9b
+D:\Program Files (x86)\Cypress\PSoC Creator\4.0\PSoC Creator\psoc\content\default\CyAnnotationLibrary\CyAnnotationLibrary.cylib\CyAnnotationLibrary.cyprj|451b772b-9a30-4427-86df-482ade7f1448
+D:\Program Files (x86)\Cypress\PSoC Creator\4.0\PSoC Creator\psoc\content\cycomponentlibraryupdates\CyComponentLibraryUpdates.cylib\CyComponentLibraryUpdates.cyprj|c8f91a7e-d302-48c5-b574-ab6d75500753
+D:\Program Files (x86)\Cypress\PSoC Creator\4.0\PSoC Creator\psoc\content\cycomponentlibrary\CyComponentLibrary.cylib\CyComponentLibrary.cyprj|7dcbcacf-1a1e-4139-8cc8-46068baa0968
+D:\Program Files (x86)\Cypress\PSoC Creator\4.0\PSoC Creator\psoc\content\cyprimitives\CyPrimitives.cylib\CyPrimitives.cyprj|3a9fbe1b-d905-4af0-9f9a-b45cfc19bbb2
